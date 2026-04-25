@@ -47,8 +47,7 @@ echo "=== [3/4] Building ${APP_NAME}.app with py2app ==="
 # py2app writes build/ and dist/ relative to setup.py; we want them in the
 # project root so we pass explicit --build-lib and --dist-dir options.
 python3 build/setup.py py2app \
-  --build-lib  "build/build" \
-  --dist-dir   "dist"
+  --dist-dir "dist"
 
 APP_PATH="dist/${APP_NAME}.app"
 if [[ ! -d "$APP_PATH" ]]; then

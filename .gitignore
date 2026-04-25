@@ -11,7 +11,9 @@ venv/
 env/
 
 # py2app intermediate output (NOT the build/ scripts directory)
-build/build/
+build/bdist*/
+build/lib*/
+build/temp*/
 dist/
 
 # macOS
