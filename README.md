@@ -1,12 +1,12 @@
-# Scout
+# Echos
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Python](https://img.shields.io/badge/Python-3.11-green)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**Scout** is a native macOS app that turns your lectures into structured Obsidian notes.
+**Echos** is a native macOS app that turns your lectures into structured Obsidian notes — named after Koichi Hirose's stand from JoJo's Bizarre Adventure Part 4.
 
-It transcribes your microphone locally using [NVIDIA Canary-Qwen 2.5B](https://huggingface.co/nvidia/canary-qwen-2.5b) — running entirely on Apple Silicon via Metal Performance Shaders — then sends the transcript to Gemma 4 31B (via Google AI) to produce clean, formatted markdown notes. Notes are saved directly into your Obsidian vault with YAML front matter injected automatically.
+It transcribes your microphone locally using [Whisper large-v3](https://huggingface.co/openai/whisper-large-v3) — running entirely on Apple Silicon via Metal Performance Shaders — then sends the transcript to Gemma 4 31B (via Google AI) to produce clean, formatted markdown notes. Notes are saved directly into your Obsidian vault with YAML front matter injected automatically.
 
 **Your audio never leaves your Mac.**
 
@@ -14,7 +14,7 @@ It transcribes your microphone locally using [NVIDIA Canary-Qwen 2.5B](https://h
 
 ## Features
 
-- **Live transcription** — Canary-Qwen 2.5B runs on-device (MPS). Updates the transcript panel every ~6 seconds.
+- **Live transcription** — Whisper large-v3 runs on-device (MPS). Updates the transcript panel every ~6 seconds.
 - **Structured notes** — Gemma 4 31B converts the full transcript into headings, bullet points, code blocks, and a Key Takeaways section.
 - **Obsidian-native** — Saves to `{vault}/{course}/Lecture-NN.md` with YAML front matter. Auto-increments lecture numbers. Opens the note in Obsidian with one click.
 - **Fully offline transcription** — No audio is sent to any server.
@@ -31,36 +31,36 @@ It transcribes your microphone locally using [NVIDIA Canary-Qwen 2.5B](https://h
 |---|---|
 | macOS 13 (Ventura) or later | Required |
 | Apple Silicon (M1+) | Strongly recommended (MPS inference). Intel Macs work with CPU-only mode. |
-| [Obsidian](https://obsidian.md) | Must be installed. Scout does not create the vault. |
+| [Obsidian](https://obsidian.md) | Must be installed. Echos does not create the vault. |
 | Google AI API key | Free tier available at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-| ~6 GB free disk space | ~620 MB for the app + ~5 GB for model weights (downloaded on first launch) |
+| ~4 GB free disk space | ~620 MB for the app + ~3 GB for Whisper large-v3 (downloaded on first launch) |
 
 ---
 
 ## Install (pre-built DMG)
 
-1. Download `Scout-1.0.0.dmg` from the [latest release](../../releases/latest).
-2. Open the DMG and drag **Scout.app** into your **Applications** folder.
-3. Launch Scout from Launchpad or Spotlight.
+1. Download `Echos-1.0.x.dmg` from the [latest release](../../releases/latest).
+2. Open the DMG and drag **Echos.app** into your **Applications** folder.
+3. Launch Echos from Launchpad or Spotlight.
 
-> **Gatekeeper note:** Because Scout is not yet notarised with an Apple Developer certificate, macOS will block it on first launch. To open it anyway: right-click **Scout.app** → **Open** → click **Open** in the dialog. You only need to do this once.
+> **Gatekeeper note:** Because Echos is not yet notarised with an Apple Developer certificate, macOS will block it on first launch. To open it anyway: right-click **Echos.app** → **Open** → click **Open** in the dialog. You only need to do this once.
 
 ---
 
 ## First-launch walkthrough
 
-Scout shows a three-step setup wizard the first time you open it:
+Echos shows a three-step setup wizard the first time you open it:
 
-1. **Welcome** — Overview of what Scout needs.
-2. **Configure** — Set your Obsidian vault folder and paste your Google AI API key. Scout validates the key before you can continue.
-3. **Download model** — Canary-Qwen 2.5B (~5 GB) downloads once to `~/.cache/huggingface/hub/`. Click **Background** to explore the app while downloading; the record button re-enables once the model is ready.
+1. **Welcome** — Overview of what Echos needs.
+2. **Configure** — Set your Obsidian vault folder and paste your Google AI API key. Echos validates the key before you can continue.
+3. **Download model** — Whisper large-v3 (~3 GB) downloads once to `~/.cache/huggingface/hub/`. Click **Background** to explore the app while downloading; the record button re-enables once the model is ready.
 
 ---
 
-## Using Scout
+## Using Echos
 
-1. **Add a course** — Click **+ Course** in the sidebar, enter a name and vault subfolder, and pick a colour.
-2. **Select the course** — Click it in the sidebar. Scout auto-detects the next lecture number.
+1. **Add a course** — Click **+ Add Course** in the sidebar, enter a name and vault subfolder, and pick a colour.
+2. **Select the course** — Click it in the sidebar. Echos auto-detects the next lecture number.
 3. **Record** — Click **Start Recording** (or press **⌘R**). The transcript panel updates live.
 4. **Stop** — Click **Stop Recording** (or press **⌘R** again).
 5. **Generate notes** — Click **Generate Notes**. Notes stream in as Gemma processes the transcript.
@@ -80,7 +80,7 @@ Scout shows a three-step setup wizard the first time you open it:
 
 ## Settings
 
-Open **Scout → Settings** (⌘,) to configure:
+Open **Echos → Settings** (⌘,) to configure:
 
 | Tab | Key settings |
 |---|---|
@@ -95,18 +95,21 @@ Open **Scout → Settings** (⌘,) to configure:
 
 ```bash
 # 1. Clone
-git clone https://github.com/yourname/scout.git
-cd scout
+git clone https://github.com/Akoirala47/Echos.git
+cd Echos
 
-# 2. Create a Python 3.11 virtual environment
+# 2. Install libsndfile (required by soundfile)
+brew install libsndfile
+
+# 3. Create a Python 3.11 virtual environment
 python3.11 -m venv .venv
 source .venv/bin/activate
 
-# 3. Install runtime + dev dependencies
+# 4. Install runtime + dev dependencies
 pip install -r requirements.txt -r requirements-dev.txt
 
-# 4. Run Scout from source
-python -m scout.main
+# 5. Run from source
+python -m echos.main
 ```
 
 ### Running tests
@@ -115,17 +118,17 @@ python -m scout.main
 pytest tests/ -v
 ```
 
-All tests are pure unit tests with no network or model dependencies. Expected coverage ≥ 80 % across `config`, `core`, and `utils`.
+All tests are pure unit tests with no network or model dependencies. Expected coverage ≥ 80% across `config`, `core`, and `utils`.
 
 ---
 
 ## Building the DMG
 
 ```bash
-# Requires: npm install -g create-dmg  (or: brew install create-dmg)
+# Requires: brew install create-dmg
 chmod +x build/build.sh
 ./build/build.sh
-# Output: dist/Scout-1.0.0.dmg
+# Output: dist/Echos-1.0.x.dmg
 ```
 
 The build script:
@@ -141,33 +144,33 @@ codesign --deep --force --verify --verbose \
   --sign "Developer ID Application: Your Name (TEAMID)" \
   --entitlements build/entitlements.plist \
   --options runtime \
-  dist/Scout.app
+  dist/Echos.app
 
-xcrun notarytool submit dist/Scout-1.0.0.dmg \
+xcrun notarytool submit dist/Echos-1.0.x.dmg \
   --apple-id "your@email.com" \
   --password "@keychain:AC_PASSWORD" \
   --team-id "TEAMID" \
   --wait
 
-xcrun stapler staple dist/Scout-1.0.0.dmg
+xcrun stapler staple dist/Echos-1.0.x.dmg
 ```
 
 ### CI/CD
 
-Pushing a `v*` tag (e.g. `v1.0.0`) triggers the GitHub Actions workflow (`.github/workflows/build.yml`), which builds the DMG on an M1 runner and attaches it to the GitHub Release automatically.
+Pushing a `v*` tag (e.g. `v1.0.5`) triggers the GitHub Actions workflow (`.github/workflows/build.yml`), which builds the DMG on an M1 runner and attaches it to the GitHub Release automatically.
 
 ---
 
 ## Project structure
 
 ```
-scout/
-├── scout/
+Echos/
+├── echos/
 │   ├── main.py            # Entry point
 │   ├── app.py             # AppController — state machine + signal wiring
 │   ├── core/
-│   │   ├── audio_worker.py      # QThread: mic capture + Canary-Qwen inference
-│   │   ├── model_manager.py     # Download, load, transcribe
+│   │   ├── audio_worker.py      # QThread: mic capture + Whisper inference
+│   │   ├── model_manager.py     # Download, load, transcribe (Whisper large-v3)
 │   │   ├── notes_worker.py      # QThread: Gemma via Google AI (streaming)
 │   │   └── obsidian_manager.py  # Vault path ops, file write, lecture numbering
 │   ├── ui/
@@ -206,9 +209,9 @@ scout/
 
 | Location | Contents |
 |---|---|
-| `~/Library/Application Support/Scout/config.json` | All settings, course list, API key |
-| `~/Library/Logs/Scout/scout.log` | Rotating log file (10 MB × 3) |
-| `~/.cache/huggingface/hub/` | Canary-Qwen 2.5B model weights (~5 GB) |
+| `~/Library/Application Support/Echos/config.json` | All settings, course list, API key |
+| `~/Library/Logs/Echos/echos.log` | Rotating log file (10 MB × 3) |
+| `~/.cache/huggingface/hub/` | Whisper large-v3 model weights (~3 GB) |
 
 ---
 
