@@ -4,12 +4,41 @@ Run from the project root:
     python build/setup.py py2app
 """
 
+import glob
+import os
 import sys
 # modulegraph recursively walks torch's import graph which exceeds the default
 # limit of 1000.  5000 is sufficient; 10000 is a safe upper bound.
 sys.setrecursionlimit(10000)
 
 from setuptools import setup
+
+
+def _find_libsndfile() -> list[str]:
+    """Locate libsndfile.dylib for bundling.
+
+    Tries soundfile's wheel-bundled copy first (preferred — self-contained),
+    then falls back to Homebrew install paths so the .app works without the
+    user installing libsndfile system-wide.
+    """
+    paths: list[str] = []
+    try:
+        import soundfile  # noqa: WPS433
+        sf_data = os.path.join(os.path.dirname(soundfile.__file__), "_soundfile_data")
+        if os.path.isdir(sf_data):
+            paths.extend(glob.glob(os.path.join(sf_data, "*.dylib")))
+    except Exception:
+        pass
+    for candidate in (
+        "/opt/homebrew/lib/libsndfile.dylib",
+        "/opt/homebrew/lib/libsndfile.1.dylib",
+        "/usr/local/lib/libsndfile.dylib",
+        "/usr/local/lib/libsndfile.1.dylib",
+    ):
+        if os.path.isfile(candidate) and candidate not in paths:
+            paths.append(candidate)
+    return paths
+
 
 APP = ["echos/main.py"]
 DATA_FILES = []
@@ -108,6 +137,9 @@ OPTIONS = {
     # Embed the Python framework inside the .app bundle.
     "semi_standalone": False,
     "site_packages": True,
+    # Bundle libsndfile.dylib into Contents/Frameworks so soundfile can load
+    # it without the user needing `brew install libsndfile`.
+    "frameworks": _find_libsndfile(),
 }
 
 setup(

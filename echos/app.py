@@ -133,7 +133,12 @@ class AppController:
                 )
                 self._start_model_download()
             else:
-                self._window.status_bar_widget.set_status("#E74C3C", "Model not downloaded")
+                # Model not detected — start downloading automatically so the
+                # user sees real progress instead of a dead status line.
+                self._window.status_bar_widget.set_status(
+                    "#F39C12", "Model not found \u2014 starting download\u2026"
+                )
+                self._start_model_download()
 
     # ------------------------------------------------------------------
     # Model loading
@@ -494,9 +499,13 @@ class AppController:
         self._download_worker.start()
 
     def _on_download_progress(self, done: int, total: int) -> None:
-        pct = int(done / total * 100) if total > 0 else 0
-        gb_done = done / 1024 ** 3
-        gb_total = total / 1024 ** 3
+        # Clamp values defensively — HF metadata can occasionally report bogus
+        # sizes (None, 0, or negative) that would otherwise produce "-1.0 GB".
+        safe_total = max(total, 3 * 1024 ** 3)  # never below 3 GB (Whisper large-v3)
+        safe_done = max(0, min(done, safe_total))
+        pct = int(safe_done / safe_total * 100)
+        gb_done = safe_done / 1024 ** 3
+        gb_total = safe_total / 1024 ** 3
         self._window.status_bar_widget.set_status(
             "#F39C12",
             f"Downloading model\u2026 {gb_done:.1f} / {gb_total:.1f} GB ({pct}%)",
