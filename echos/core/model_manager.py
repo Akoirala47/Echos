@@ -81,8 +81,15 @@ class ModelManager:
         try:
             from huggingface_hub import model_info
             info = model_info(self.MODEL_ID)
-            total = sum(s.size for s in (info.siblings or []) if s.size is not None)
-            return total if total > 0 else _FALLBACK_BYTES
+            total = 0
+            for s in (info.siblings or []):
+                size = getattr(s, "size", None)
+                if isinstance(size, int) and size > 0:
+                    total += size
+            # Guard against API quirks: clamp to fallback if suspiciously small.
+            if total < _FALLBACK_BYTES // 2:
+                return _FALLBACK_BYTES
+            return total
         except Exception:
             return _FALLBACK_BYTES
 
@@ -92,6 +99,9 @@ class ModelManager:
         from huggingface_hub import snapshot_download, constants as hf_constants
 
         expected_bytes = self._get_expected_bytes()
+        # Final safety net — never let a non-positive value reach the UI.
+        if expected_bytes <= 0:
+            expected_bytes = _FALLBACK_BYTES
         logger.info("Expected model size: %.2f GB", expected_bytes / 1024 ** 3)
 
         cache_dir = Path(hf_constants.HF_HUB_CACHE)
