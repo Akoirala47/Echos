@@ -101,19 +101,22 @@ class NotesPanel(QWidget):
         self._raw_markdown: str = ""
         self._show_raw: bool = False
 
+        _muted = "font-size: 11px; font-weight: 600; color: palette(placeholderText);"
+        _action = "font-size: 11px; color: palette(placeholderText);"
+
         # -- Header toolbar --
         header = QLabel("STRUCTURED NOTES")
-        header.setStyleSheet("font-size: 11px; font-weight: 600; color: #888;")
+        header.setStyleSheet(_muted)
 
         self._toggle_btn = QPushButton("Raw")
         self._toggle_btn.setFlat(True)
-        self._toggle_btn.setStyleSheet("font-size: 11px; color: #888;")
+        self._toggle_btn.setStyleSheet(_action)
         self._toggle_btn.setCheckable(True)
         self._toggle_btn.toggled.connect(self._toggle_view)
 
         self._copy_btn = QPushButton("Copy")
         self._copy_btn.setFlat(True)
-        self._copy_btn.setStyleSheet("font-size: 11px; color: #888;")
+        self._copy_btn.setStyleSheet(_action)
         self._copy_btn.clicked.connect(self._on_copy)
 
         toolbar = QHBoxLayout()

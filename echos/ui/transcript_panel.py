@@ -24,18 +24,21 @@ class TranscriptPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
+        _muted = "font-size: 11px; font-weight: 600; color: palette(placeholderText);"
+        _action = "font-size: 11px; color: palette(placeholderText);"
+
         # Header toolbar
         header = QLabel("LIVE TRANSCRIPT")
-        header.setStyleSheet("font-size: 11px; font-weight: 600; color: #888;")
+        header.setStyleSheet(_muted)
 
         self._clear_btn = QPushButton("Clear")
         self._clear_btn.setFlat(True)
-        self._clear_btn.setStyleSheet("font-size: 11px; color: #888;")
+        self._clear_btn.setStyleSheet(_action)
         self._clear_btn.clicked.connect(self._on_clear)
 
         self._export_btn = QPushButton("Export .txt")
         self._export_btn.setFlat(True)
-        self._export_btn.setStyleSheet("font-size: 11px; color: #888;")
+        self._export_btn.setStyleSheet(_action)
         self._export_btn.clicked.connect(self._on_export)
 
         toolbar = QHBoxLayout()

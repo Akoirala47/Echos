@@ -48,16 +48,15 @@ class StatusBarWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFixedHeight(38)
-        self.setStyleSheet(
-            "background: #F5F5F4; border-top: 1px solid #DCDCDC;"
-        )
+        self.setAutoFillBackground(True)
+        self.setStyleSheet("border-top: 1px solid palette(mid);")
 
         self._dot = _StatusDot(self)
         self._status_label = QLabel("Ready")
-        self._status_label.setStyleSheet("font-size: 12px; color: #555;")
+        self._status_label.setStyleSheet("font-size: 12px;")
 
         self._vault_label = QLabel("")
-        self._vault_label.setStyleSheet("font-size: 12px; color: #888;")
+        self._vault_label.setStyleSheet("font-size: 12px; color: palette(placeholderText);")
 
         self._save_btn = QPushButton("Save to Obsidian")
         self._save_btn.setEnabled(False)

@@ -45,11 +45,11 @@ class MainWindow(QMainWindow):
         )
         self._lecture_label = QLabel("")
         self._lecture_label.setStyleSheet(
-            "font-size: 12px; color: #888; padding: 2px 0;"
+            "font-size: 12px; color: palette(placeholderText); padding: 2px 0;"
         )
         course_header = QWidget()
         course_header.setStyleSheet(
-            "background: #FFFFFF; border-bottom: 1px solid #E8E8E8;"
+            "background: palette(window); border-bottom: 1px solid palette(mid);"
         )
         ch_layout = QHBoxLayout(course_header)
         ch_layout.setContentsMargins(14, 8, 14, 8)
@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
 
         # -- Main content area --
         main_area = QWidget()
-        main_area.setStyleSheet("background: #FFFFFF;")
+        main_area.setStyleSheet("background: palette(base);")
         ma_layout = QVBoxLayout(main_area)
         ma_layout.setContentsMargins(0, 0, 0, 0)
         ma_layout.setSpacing(0)

@@ -212,15 +212,16 @@ class SidebarWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFixedWidth(210)
-        self.setStyleSheet(
-            "SidebarWidget { background: #F0F0EF; border-right: 1px solid #DCDCDC; }"
-        )
+        # Let Qt paint the window-role background (adapts to dark/light automatically).
+        self.setAutoFillBackground(True)
+        self.setStyleSheet("border-right: 1px solid palette(mid);")
 
         # Header label
         header = QLabel("COURSES")
         header.setStyleSheet(
             "font-size: 10px; font-weight: 700; letter-spacing: 0.5px;"
-            " color: #888; padding: 12px 12px 4px 12px;"
+            " color: palette(placeholderText); padding: 12px 12px 4px 12px;"
+            " border: none;"
         )
 
         # Course list
@@ -230,16 +231,16 @@ class SidebarWidget(QWidget):
         self._list.setItemDelegate(_CourseDelegate())
         self._list.setSpacing(0)
         self._list.setFrameShape(QListWidget.Shape.NoFrame)
-        self._list.setStyleSheet("background: transparent; outline: 0;")
+        self._list.setStyleSheet("background: transparent; outline: 0; border: none;")
         self._list.currentItemChanged.connect(self._on_selection_changed)
         self._list.order_changed.connect(self._on_order_changed)
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._list.customContextMenuRequested.connect(self._show_context_menu)
 
         _btn_style = (
-            "QPushButton { color: #444; font-size: 12px; padding: 6px 12px;"
+            "QPushButton { color: palette(windowText); font-size: 12px; padding: 6px 12px;"
             " text-align: left; background: transparent; border: none; }"
-            "QPushButton:hover { background: rgba(0,0,0,0.06); border-radius: 4px; }"
+            "QPushButton:hover { background: palette(midlight); border-radius: 4px; }"
         )
 
         # Add course button
