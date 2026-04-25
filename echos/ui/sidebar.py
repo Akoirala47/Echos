@@ -211,14 +211,16 @@ class SidebarWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFixedWidth(186)
-        # Use palette-aware background so the sidebar adapts to dark mode.
-        self.setStyleSheet("background: palette(window);")
+        self.setFixedWidth(210)
+        self.setStyleSheet(
+            "SidebarWidget { background: #F0F0EF; border-right: 1px solid #DCDCDC; }"
+        )
 
         # Header label
         header = QLabel("COURSES")
         header.setStyleSheet(
-            "font-size: 10px; font-weight: 700; color: #999; padding: 10px 10px 4px 10px;"
+            "font-size: 10px; font-weight: 700; letter-spacing: 0.5px;"
+            " color: #888; padding: 12px 12px 4px 12px;"
         )
 
         # Course list
@@ -234,24 +236,24 @@ class SidebarWidget(QWidget):
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._list.customContextMenuRequested.connect(self._show_context_menu)
 
-        # Add course button
-        add_btn = QPushButton("+ Course")
-        add_btn.setFlat(True)
-        add_btn.setStyleSheet(
-            "color: #555; font-size: 12px; padding: 4px 10px; text-align: left;"
+        _btn_style = (
+            "QPushButton { color: #444; font-size: 12px; padding: 6px 12px;"
+            " text-align: left; background: transparent; border: none; }"
+            "QPushButton:hover { background: rgba(0,0,0,0.06); border-radius: 4px; }"
         )
+
+        # Add course button
+        add_btn = QPushButton("+ Add Course")
+        add_btn.setStyleSheet(_btn_style)
         add_btn.clicked.connect(self._on_add_course)
 
-        # Separator + Settings button
-        settings_btn = QPushButton("\u2699  Settings")
-        settings_btn.setFlat(True)
-        settings_btn.setStyleSheet(
-            "color: #666; font-size: 12px; padding: 6px 10px; text-align: left;"
-        )
+        # Settings button
+        settings_btn = QPushButton("\u2699\ufe0f  Settings")
+        settings_btn.setStyleSheet(_btn_style)
         settings_btn.clicked.connect(self.settings_clicked)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(0, 0, 0, 4)
         layout.setSpacing(0)
         layout.addWidget(header)
         layout.addWidget(self._list, 1)

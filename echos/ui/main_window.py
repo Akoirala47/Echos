@@ -11,11 +11,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from scout.ui.notes_panel import NotesPanel
-from scout.ui.record_bar import RecordBarWidget
-from scout.ui.sidebar import SidebarWidget
-from scout.ui.status_bar import StatusBarWidget
-from scout.ui.transcript_panel import TranscriptPanel
+from echos.ui.notes_panel import NotesPanel
+from echos.ui.record_bar import RecordBarWidget
+from echos.ui.sidebar import SidebarWidget
+from echos.ui.status_bar import StatusBarWidget
+from echos.ui.transcript_panel import TranscriptPanel
 
 
 class MainWindow(QMainWindow):
@@ -27,8 +27,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Scout")
-        self.setMinimumSize(820, 560)
+        self.setWindowTitle("Echos")
+        self.setMinimumSize(960, 640)
+        self.resize(1200, 780)
 
         # -- Sub-widgets (exposed for AppController) --
         self.sidebar = SidebarWidget()
@@ -40,15 +41,15 @@ class MainWindow(QMainWindow):
         # -- Course header row --
         self._course_label = QLabel("No course selected")
         self._course_label.setStyleSheet(
-            "font-size: 16px; font-weight: 700; color: #1A1A1A; padding: 2px 0;"
+            "font-size: 15px; font-weight: 700; padding: 2px 0;"
         )
         self._lecture_label = QLabel("")
         self._lecture_label.setStyleSheet(
-            "font-size: 13px; color: #888; padding: 2px 0;"
+            "font-size: 12px; color: #888; padding: 2px 0;"
         )
         course_header = QWidget()
         course_header.setStyleSheet(
-            "background: palette(base); border-bottom: 1px solid palette(mid);"
+            "background: #FFFFFF; border-bottom: 1px solid #E8E8E8;"
         )
         ch_layout = QHBoxLayout(course_header)
         ch_layout.setContentsMargins(14, 8, 14, 8)
@@ -65,7 +66,7 @@ class MainWindow(QMainWindow):
 
         # -- Main content area --
         main_area = QWidget()
-        main_area.setStyleSheet("background: palette(base);")
+        main_area.setStyleSheet("background: #FFFFFF;")
         ma_layout = QVBoxLayout(main_area)
         ma_layout.setContentsMargins(0, 0, 0, 0)
         ma_layout.setSpacing(0)
@@ -77,9 +78,10 @@ class MainWindow(QMainWindow):
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
         top_splitter.addWidget(self.sidebar)
         top_splitter.addWidget(main_area)
-        top_splitter.setSizes([186, 634])
+        top_splitter.setSizes([210, 990])
         top_splitter.setCollapsible(0, False)
         top_splitter.setCollapsible(1, False)
+        top_splitter.setHandleWidth(1)
 
         # -- Central widget --
         central = QWidget()
@@ -101,7 +103,7 @@ class MainWindow(QMainWindow):
         mb = self.menuBar()
 
         # Scout menu
-        scout_menu = mb.addMenu("Scout")
+        scout_menu = mb.addMenu("Echos")
         about_action = QAction("About Scout", self)
         scout_menu.addAction(about_action)
         scout_menu.addSeparator()

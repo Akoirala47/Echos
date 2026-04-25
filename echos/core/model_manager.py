@@ -59,11 +59,24 @@ class ModelManager:
     # ------------------------------------------------------------------
 
     def is_cached(self) -> bool:
-        """Return True if model weights exist locally without triggering a download."""
+        """Return True if at least one model file exists locally (may be incomplete)."""
         try:
             from huggingface_hub import try_to_load_from_cache
             result = try_to_load_from_cache(self.MODEL_ID, "config.json")
             return result is not None
+        except Exception:
+            return False
+
+    def is_fully_cached(self) -> bool:
+        """Return True only when the complete model snapshot is present locally.
+
+        Uses snapshot_download with local_files_only=True which raises if any
+        file is missing, making it safe to call load() afterwards.
+        """
+        try:
+            from huggingface_hub import snapshot_download
+            snapshot_download(self.MODEL_ID, local_files_only=True)
+            return True
         except Exception:
             return False
 

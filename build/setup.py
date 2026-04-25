@@ -1,4 +1,4 @@
-"""py2app build configuration for Scout.
+"""py2app build configuration for Echos.
 
 Run from the project root:
     python build/setup.py py2app
@@ -11,24 +11,24 @@ sys.setrecursionlimit(10000)
 
 from setuptools import setup
 
-APP = ["scout/main.py"]
+APP = ["echos/main.py"]
 DATA_FILES = []
 OPTIONS = {
     "argv_emulation": False,
     "iconfile": "assets/icon.icns",
     "plist": {
-        "CFBundleName": "Scout",
-        "CFBundleDisplayName": "Scout",
-        "CFBundleIdentifier": "com.scout.app",
+        "CFBundleName": "Echos",
+        "CFBundleDisplayName": "Echos",
+        "CFBundleIdentifier": "com.echos.app",
         "CFBundleVersion": "1.0.0",
         "CFBundleShortVersionString": "1.0.0",
-        "CFBundleExecutable": "Scout",
+        "CFBundleExecutable": "Echos",
         # Privacy usage descriptions required by macOS sandbox
         "NSMicrophoneUsageDescription": (
-            "Scout needs microphone access to transcribe your lectures."
+            "Echos needs microphone access to transcribe your lectures."
         ),
         "NSDocumentsFolderUsageDescription": (
-            "Scout needs access to your Documents folder to save notes to Obsidian."
+            "Echos needs access to your Documents folder to save notes to Obsidian."
         ),
         # macOS Ventura minimum
         "LSMinimumSystemVersion": "13.0",
@@ -47,7 +47,7 @@ OPTIONS = {
         "huggingface_hub",
         "markdown",
         "soundfile",
-        "scout",
+        "echos",
         # google.generativeai is a PEP 420 namespace package; imp.find_module()
         # cannot locate it so it must NOT be listed here.  modulegraph traces it
         # automatically via the import in notes_worker.py.
@@ -59,29 +59,29 @@ OPTIONS = {
         "google.generativeai",
         "google.generativeai.types",
         "google.ai.generativelanguage_v1beta",
-        # Scout modules
-        "scout.main",
-        "scout.app",
-        "scout.config.config_manager",
-        "scout.config.defaults",
-        "scout.core.audio_worker",
-        "scout.core.model_manager",
-        "scout.core.notes_worker",
-        "scout.core.obsidian_manager",
-        "scout.ui.main_window",
-        "scout.ui.onboarding",
-        "scout.ui.notes_panel",
-        "scout.ui.record_bar",
-        "scout.ui.settings_window",
-        "scout.ui.sidebar",
-        "scout.ui.status_bar",
-        "scout.ui.transcript_panel",
-        "scout.ui.widgets.course_item",
-        "scout.ui.widgets.model_progress",
-        "scout.ui.widgets.waveform",
-        "scout.utils.audio_utils",
-        "scout.utils.frontmatter",
-        "scout.utils.markdown",
+        # Echos modules
+        "echos.main",
+        "echos.app",
+        "echos.config.config_manager",
+        "echos.config.defaults",
+        "echos.core.audio_worker",
+        "echos.core.model_manager",
+        "echos.core.notes_worker",
+        "echos.core.obsidian_manager",
+        "echos.ui.main_window",
+        "echos.ui.onboarding",
+        "echos.ui.notes_panel",
+        "echos.ui.record_bar",
+        "echos.ui.settings_window",
+        "echos.ui.sidebar",
+        "echos.ui.status_bar",
+        "echos.ui.transcript_panel",
+        "echos.ui.widgets.course_item",
+        "echos.ui.widgets.model_progress",
+        "echos.ui.widgets.waveform",
+        "echos.utils.audio_utils",
+        "echos.utils.frontmatter",
+        "echos.utils.markdown",
     ],
     "excludes": [
         "tkinter",
@@ -111,7 +111,7 @@ OPTIONS = {
 }
 
 setup(
-    name="Scout",
+    name="Echos",
     app=APP,
     data_files=DATA_FILES,
     options={"py2app": OPTIONS},

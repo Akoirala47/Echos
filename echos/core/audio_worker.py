@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from scout.utils.audio_utils import compute_rms, deduplicate_overlap, split_into_chunks
+from echos.utils.audio_utils import compute_rms, deduplicate_overlap, split_into_chunks
 
 if TYPE_CHECKING:
-    from scout.core.model_manager import ModelManager
+    from echos.core.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
 

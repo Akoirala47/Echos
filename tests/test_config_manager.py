@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 import pytest
 
-from scout.config.config_manager import ConfigManager
-from scout.config.defaults import DEFAULT_CONFIG
+from echos.config.config_manager import ConfigManager
+from echos.config.defaults import DEFAULT_CONFIG
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ def test_atomic_write_uses_rename(mgr: ConfigManager, cfg_path: Path, tmp_path: 
         written_temps.append(src)
         original_replace(src, dst)
 
-    with patch("scout.config.config_manager.os.replace", side_effect=capturing_replace):
+    with patch("echos.config.config_manager.os.replace", side_effect=capturing_replace):
         mgr.save({"version": "1.0"})
 
     assert len(written_temps) == 1
@@ -128,7 +128,7 @@ def test_atomic_write_uses_rename(mgr: ConfigManager, cfg_path: Path, tmp_path: 
 
 def test_atomic_write_cleans_up_temp_on_failure(mgr: ConfigManager, tmp_path: Path) -> None:
     """If os.replace raises, the temp file must be cleaned up."""
-    with patch("scout.config.config_manager.os.replace", side_effect=OSError("disk full")):
+    with patch("echos.config.config_manager.os.replace", side_effect=OSError("disk full")):
         with pytest.raises(OSError):
             mgr.save({"version": "1.0"})
 

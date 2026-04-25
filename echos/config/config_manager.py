@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .defaults import DEFAULT_CONFIG
 
-_APP_SUPPORT = Path.home() / "Library" / "Application Support" / "Scout"
+_APP_SUPPORT = Path.home() / "Library" / "Application Support" / "Echos"
 _CONFIG_PATH = _APP_SUPPORT / "config.json"
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from scout.utils.frontmatter import inject_frontmatter
+from echos.utils.frontmatter import inject_frontmatter
 
 
 # ---------------------------------------------------------------------------
@@ -36,9 +36,9 @@ def test_date_field_present() -> None:
     assert "date: 2026-04-25" in result
 
 
-def test_scout_version_field_present() -> None:
+def test_echos_version_field_present() -> None:
     result = inject_frontmatter("body", "CS446", 1, "2026-04-25", version="2.0.0")
-    assert "scout_version: 2.0.0" in result
+    assert "echos_version: 2.0.0" in result
 
 
 # ---------------------------------------------------------------------------

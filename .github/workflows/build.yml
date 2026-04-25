@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build Scout.dmg (macOS Apple Silicon)
+    name: Build Echos.dmg (macOS Apple Silicon)
     runs-on: macos-14        # GitHub's M1 runner
     permissions:
       contents: write        # required to create GitHub Releases and upload assets
@@ -44,7 +44,7 @@ jobs:
         run: python3 assets/create_assets.py
 
       # ---------------------------------------------------------------
-      - name: Build Scout.app and Scout.dmg
+      - name: Build Echos.app and Echos.dmg
         run: |
           chmod +x build/build.sh
           ./build/build.sh
@@ -52,15 +52,15 @@ jobs:
       # ---------------------------------------------------------------
       - name: Verify DMG was created
         run: |
-          ls -lh dist/Scout-*.dmg
-          echo "DMG_PATH=$(ls dist/Scout-*.dmg)" >> "$GITHUB_ENV"
+          ls -lh dist/Echos-*.dmg
+          echo "DMG_PATH=$(ls dist/Echos-*.dmg)" >> "$GITHUB_ENV"
 
       # ---------------------------------------------------------------
       - name: Upload DMG as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Scout-dmg
-          path: dist/Scout-*.dmg
+          name: Echos-dmg
+          path: dist/Echos-*.dmg
           retention-days: 30
 
       # ---------------------------------------------------------------
@@ -68,7 +68,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Scout-*.dmg
+          files: dist/Echos-*.dmg
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

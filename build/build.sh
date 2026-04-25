@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full Scout build pipeline: assets → .app (py2app) → .dmg (create-dmg)
+# Full Echos build pipeline: assets → .app (py2app) → .dmg (create-dmg)
 # Run from the project root:
 #   chmod +x build/build.sh && ./build/build.sh
 set -euo pipefail
@@ -12,10 +12,10 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 VERSION="1.0.0"
-APP_NAME="Scout"
+APP_NAME="Echos"
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
 
-echo "=== Scout Build Script v${VERSION} ==="
+echo "=== Echos Build Script v${VERSION} ==="
 echo "Project root: $PROJECT_ROOT"
 
 # ---------------------------------------------------------------------------

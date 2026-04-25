@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate placeholder app icon and DMG background for Scout.
+"""Generate placeholder app icon and DMG background for Echos.
 
 Run once before building:
     python assets/create_assets.py
@@ -59,14 +59,14 @@ def _write_png(path: Path, width: int, height: int, pixels: list[tuple[int, int,
 # Icon pixel generator
 # ---------------------------------------------------------------------------
 
-# Scout brand blue
+# Echos brand blue
 _BLUE = (41, 128, 185)
 _DARK_BLUE = (31, 97, 141)
 _WHITE = (255, 255, 255)
 
 
 def _icon_pixels(size: int) -> list[tuple[int, int, int, int]]:
-    """Return RGBA pixels for a size×size Scout icon.
+    """Return RGBA pixels for a size×size Echos icon.
 
     Design: deep blue rounded square with a white compass-needle 'S' shape.
     """
@@ -168,7 +168,7 @@ def _make_icns(source_png: Path, out_icns: Path) -> None:
         print("  [skip] iconutil requires macOS — .icns not generated")
         return
 
-    iconset_dir = source_png.parent / "Scout.iconset"
+    iconset_dir = source_png.parent / "Echos.iconset"
     iconset_dir.mkdir(exist_ok=True)
 
     # Resize source PNG to each required size using sips (macOS built-in).
@@ -197,7 +197,7 @@ def _make_icns(source_png: Path, out_icns: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print("Generating Scout assets…")
+    print("Generating Echos assets…")
 
     icon_png = ASSETS / "icon_512.png"
     icon_icns = ASSETS / "icon.icns"

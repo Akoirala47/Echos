@@ -4,7 +4,7 @@ import logging
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from scout.utils.markdown import build_prompt
+from echos.utils.markdown import build_prompt
 
 logger = logging.getLogger(__name__)
 

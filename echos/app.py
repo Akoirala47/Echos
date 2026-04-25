@@ -9,16 +9,16 @@ from pathlib import Path
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import QMessageBox
 
-from scout.config.config_manager import ConfigManager
-from scout.core.audio_worker import AudioWorker
-from scout.core.model_manager import ModelDownloadWorker, ModelManager
-from scout.core.notes_worker import NotesWorker
-from scout.core.obsidian_manager import ObsidianManager
-from scout.ui.main_window import MainWindow
-from scout.ui.onboarding import OnboardingWizard
-from scout.ui.settings_window import SettingsWindow
-from scout.utils.dialogs import ask_yes_no, show_error, show_info, show_warning
-from scout.utils.frontmatter import inject_frontmatter
+from echos.config.config_manager import ConfigManager
+from echos.core.audio_worker import AudioWorker
+from echos.core.model_manager import ModelDownloadWorker, ModelManager
+from echos.core.notes_worker import NotesWorker
+from echos.core.obsidian_manager import ObsidianManager
+from echos.ui.main_window import MainWindow
+from echos.ui.onboarding import OnboardingWizard
+from echos.ui.settings_window import SettingsWindow
+from echos.utils.dialogs import ask_yes_no, show_error, show_info, show_warning
+from echos.utils.frontmatter import inject_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -123,9 +123,14 @@ class AppController:
 
         # If model not loaded, show status.
         if not self._model_manager.is_loaded():
-            if self._model_manager.is_cached():
+            if self._model_manager.is_fully_cached():
                 self._window.status_bar_widget.set_status("#F39C12", "Loading model\u2026")
                 self._start_model_load()
+            elif self._model_manager.is_cached():
+                # Partial download — don't attempt to load, would crash PyTorch.
+                self._window.status_bar_widget.set_status(
+                    "#F39C12", "Download incomplete \u2014 re-open Settings to finish"
+                )
             else:
                 self._window.status_bar_widget.set_status("#E74C3C", "Model not downloaded")
 
@@ -134,25 +139,36 @@ class AppController:
     # ------------------------------------------------------------------
 
     def _start_model_load(self) -> None:
-        from PyQt6.QtCore import QThread
+        from PyQt6.QtCore import QThread, pyqtSignal
 
         class _LoadWorker(QThread):
+            load_failed = pyqtSignal(str)
+
             def __init__(self, mgr: ModelManager, parent=None) -> None:
                 super().__init__(parent)
                 self._mgr = mgr
 
             def run(self) -> None:
-                self._mgr.load()
+                try:
+                    self._mgr.load()
+                except Exception as exc:
+                    logger.exception("Model load failed")
+                    self.load_failed.emit(str(exc))
 
         self._load_worker = _LoadWorker(self._model_manager)
         self._load_worker.finished.connect(self._on_model_loaded)
+        self._load_worker.load_failed.connect(self._on_model_load_failed)
         self._load_worker.start()
 
     def _on_model_loaded(self) -> None:
         if self._model_manager.is_loaded():
             self._window.status_bar_widget.set_status("#27AE60", "Model ready")
-        else:
-            self._window.status_bar_widget.set_status("#E74C3C", "Model failed to load")
+
+    def _on_model_load_failed(self, message: str) -> None:
+        logger.error("Model load failed: %s", message)
+        self._window.status_bar_widget.set_status(
+            "#E74C3C", "Model failed to load \u2014 try re-downloading in Settings"
+        )
 
     # ------------------------------------------------------------------
     # Course management
@@ -472,8 +488,8 @@ class AppController:
         show_info(self._window, "Model Status", msg)
 
     def _on_open_log(self) -> None:
-        log_dir = Path.home() / "Library" / "Logs" / "Scout"
-        log_file = log_dir / "scout.log"
+        log_dir = Path.home() / "Library" / "Logs" / "Echos"
+        log_file = log_dir / "echos.log"
         if log_file.exists():
             subprocess.run(["open", str(log_file)], check=False)
         else:

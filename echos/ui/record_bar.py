@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from scout.ui.widgets.waveform import WaveformWidget
+from echos.ui.widgets.waveform import WaveformWidget
 
 # Button style sheets for each recording state
 _STYLE_IDLE = (
@@ -68,18 +68,21 @@ class RecordBarWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFixedHeight(72)
+        self.setFixedHeight(80)
+        self.setStyleSheet("background: #FAFAFA; border-bottom: 1px solid #E5E5E5;")
 
         # Record / stop button
         self._record_btn = QPushButton("\u25cf  Start Recording")
         self._record_btn.setStyleSheet(_STYLE_IDLE)
-        self._record_btn.setFixedHeight(44)
+        self._record_btn.setFixedHeight(46)
+        self._record_btn.setMinimumWidth(180)
         self._record_btn.clicked.connect(self.record_clicked)
 
         # Pause / resume button (hidden when idle)
         self._pause_btn = QPushButton("\u23f8  Pause")
         self._pause_btn.setVisible(False)
-        self._pause_btn.setFixedHeight(36)
+        self._pause_btn.setFixedHeight(38)
+        self._pause_btn.setMinimumWidth(100)
         self._pause_btn.clicked.connect(self.pause_clicked)
 
         # Waveform
@@ -87,7 +90,9 @@ class RecordBarWidget(QWidget):
 
         # Elapsed timer label
         self._timer_label = QLabel("0:00")
-        self._timer_label.setStyleSheet("font-size: 13px; color: #555; min-width: 40px;")
+        self._timer_label.setStyleSheet(
+            "font-size: 14px; font-weight: 500; color: #555; min-width: 48px;"
+        )
         self._timer_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         # Lecture number spinner
@@ -95,7 +100,8 @@ class RecordBarWidget(QWidget):
         self._lecture_spin.setRange(1, 999)
         self._lecture_spin.setValue(1)
         self._lecture_spin.setPrefix("Lecture ")
-        self._lecture_spin.setFixedWidth(110)
+        self._lecture_spin.setMinimumWidth(120)
+        self._lecture_spin.setFixedHeight(32)
 
         # Pulsing dot timer (toggles a red dot in the button text while recording)
         self._pulse_timer = QTimer(self)
@@ -122,7 +128,8 @@ class RecordBarWidget(QWidget):
         right.addWidget(self._lecture_spin)
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(12, 8, 12, 8)
+        row.setContentsMargins(16, 0, 16, 0)
+        row.setSpacing(16)
         row.addLayout(left)
         row.addLayout(right, 1)
         self.setLayout(row)

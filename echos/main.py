@@ -7,9 +7,9 @@ from pathlib import Path
 
 
 def _setup_logging() -> None:
-    log_dir = Path.home() / "Library" / "Logs" / "Scout"
+    log_dir = Path.home() / "Library" / "Logs" / "Echos"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "scout.log"
+    log_file = log_dir / "echos.log"
 
     fmt = logging.Formatter("%(asctime)s  %(levelname)-8s  %(name)s  %(message)s")
 
@@ -38,14 +38,14 @@ def main() -> None:
     from PyQt6.QtWidgets import QApplication
 
     app = QApplication(sys.argv)
-    app.setApplicationName("Scout")
-    app.setOrganizationName("Scout")
+    app.setApplicationName("Echos")
+    app.setOrganizationName("Echos")
     app.setAttribute(Qt.ApplicationAttribute.AA_DontShowIconsInMenus, False)
 
-    from scout.config.config_manager import ConfigManager
-    from scout.core.model_manager import ModelManager
-    from scout.core.obsidian_manager import ObsidianManager
-    from scout.ui.main_window import MainWindow
+    from echos.config.config_manager import ConfigManager
+    from echos.core.model_manager import ModelManager
+    from echos.core.obsidian_manager import ObsidianManager
+    from echos.ui.main_window import MainWindow
 
     config_mgr = ConfigManager()
     model_manager = ModelManager()
@@ -53,7 +53,7 @@ def main() -> None:
 
     # First-launch: show onboarding wizard before the main window.
     if config_mgr.is_first_launch():
-        from scout.ui.onboarding import OnboardingWizard
+        from echos.ui.onboarding import OnboardingWizard
 
         wizard = OnboardingWizard(model_manager)
         result = wizard.exec()
@@ -76,7 +76,7 @@ def main() -> None:
     # Build main window and controller.
     window = MainWindow()
 
-    from scout.app import AppController
+    from echos.app import AppController
     controller = AppController(window, config_mgr, model_manager, obsidian_mgr)  # noqa: F841
 
     # If model is cached but not yet loaded, AppController already kicked off the

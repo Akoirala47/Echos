@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scout.core.model_manager import ModelManager
+from echos.core.model_manager import ModelManager
 
 
 # ---------------------------------------------------------------------------

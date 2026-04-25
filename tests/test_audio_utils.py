@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from scout.utils.audio_utils import compute_rms, deduplicate_overlap, split_into_chunks
+from echos.utils.audio_utils import compute_rms, deduplicate_overlap, split_into_chunks
 
 
 # ---------------------------------------------------------------------------

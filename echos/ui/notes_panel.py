@@ -71,7 +71,7 @@ def _md_to_html(text: str) -> str:
         import html
         body = f"<pre>{html.escape(text)}</pre>"
     try:
-        from scout.utils.theme import notes_css
+        from echos.utils.theme import notes_css
         css = notes_css()
     except Exception:
         css = _NOTES_CSS

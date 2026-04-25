@@ -24,7 +24,7 @@ def inject_frontmatter(
         f"lecture: {lecture_num}\n"
         f"date: {date}\n"
         f"tags: {tags}\n"
-        f"scout_version: {version}\n"
+        f"echos_version: {version}\n"
         "---\n\n"
     )
     return front + notes_body

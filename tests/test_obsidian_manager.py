@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scout.core.obsidian_manager import ObsidianManager
+from echos.core.obsidian_manager import ObsidianManager
 
 
 @pytest.fixture

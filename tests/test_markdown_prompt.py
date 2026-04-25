@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from scout.utils.markdown import build_prompt
+from echos.utils.markdown import build_prompt
 
 
 # ---------------------------------------------------------------------------

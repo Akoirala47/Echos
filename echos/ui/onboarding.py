@@ -15,8 +15,8 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
 )
 
-from scout.core.model_manager import ModelDownloadWorker, ModelManager
-from scout.ui.widgets.model_progress import ModelProgressWidget
+from echos.core.model_manager import ModelDownloadWorker, ModelManager
+from echos.ui.widgets.model_progress import ModelProgressWidget
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +208,8 @@ class DownloadPage(QWizardPage):
         return self._done
 
     def _start_download(self) -> None:
-        self._worker = ModelDownloadWorker(self._model_manager, self)
+        # No parent — worker must outlive this page when "Background" is clicked.
+        self._worker = ModelDownloadWorker(self._model_manager, parent=None)
         self._worker.progress.connect(self._on_progress)
         self._worker.done.connect(self._on_done)
         self._worker.error.connect(self._on_error)
@@ -227,7 +228,15 @@ class DownloadPage(QWizardPage):
         self._info.setText(f"\u26a0\ufe0f Download failed: {message[:100]}")
 
     def _go_background(self) -> None:
-        # Dismiss wizard; download continues in the background worker.
+        # Disconnect signals so the destroyed page can't receive callbacks,
+        # but leave the worker running — it has no parent so Qt won't kill it.
+        if self._worker and self._worker.isRunning():
+            try:
+                self._worker.progress.disconnect(self._on_progress)
+                self._worker.done.disconnect(self._on_done)
+                self._worker.error.disconnect(self._on_error)
+            except RuntimeError:
+                pass
         if self.wizard():
             self.wizard().accept()
 
