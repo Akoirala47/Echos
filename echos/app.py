@@ -167,8 +167,15 @@ class AppController:
 
     def _on_model_load_failed(self, message: str) -> None:
         logger.error("Model load failed: %s", message)
-        self._window.status_bar_widget.set_status(
-            "#E74C3C", "Model failed to load \u2014 try re-downloading in Settings"
+        self._window.status_bar_widget.set_status("#E74C3C", "Model failed to load")
+        # Show the full error so it can be reported / debugged.
+        show_error(
+            self._window,
+            "Model Failed to Load",
+            f"All loading strategies failed for {self._model_manager.MODEL_ID}.\n\n"
+            f"{message}\n\n"
+            "Check the log file (Help → Open Log File) for full details.\n"
+            "You can also try re-downloading the model in Settings → Transcription.",
         )
 
     # ------------------------------------------------------------------
