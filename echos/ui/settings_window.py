@@ -224,7 +224,7 @@ class _TranscriptionTab(QWidget):
 
         # Model selector (v1: single option)
         self._model_combo = QComboBox()
-        self._model_combo.addItem("Canary-Qwen 2.5B", "nvidia/canary-qwen-2.5b")
+        self._model_combo.addItem("Whisper large-v3", "openai/whisper-large-v3")
         self._model_combo.setEnabled(False)  # only one option in v1
 
         # Chunk size slider 3–10s
@@ -279,7 +279,7 @@ class _TranscriptionTab(QWidget):
         form.addRow("Model status:", self._status_label)
         form.addRow("", self._redownload_btn)
 
-        group = QGroupBox("Canary-Qwen ASR")
+        group = QGroupBox("Whisper ASR")
         group.setLayout(form)
         layout.addWidget(group)
         layout.addStretch()
@@ -289,7 +289,7 @@ class _TranscriptionTab(QWidget):
         reply = QMessageBox.question(
             self,
             "Re-download Model",
-            "This will delete the cached model weights and start a fresh ~5 GB download. Continue?",
+            "This will delete the cached model weights and start a fresh ~3 GB download. Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -298,7 +298,7 @@ class _TranscriptionTab(QWidget):
                 from huggingface_hub import constants as hf_constants
                 cache_dir = (
                     Path(hf_constants.HF_HUB_CACHE)
-                    / "models--nvidia--canary-qwen-2.5b"
+                    / "models--openai--whisper-large-v3"
                 )
                 if cache_dir.exists():
                     shutil.rmtree(cache_dir)

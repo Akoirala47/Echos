@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-_TOTAL_BYTES = 5 * 1024 ** 3  # 5 GB expected download size
+_TOTAL_BYTES = 3 * 1024 ** 3  # ~3 GB for Whisper large-v3
 
 
 def _fmt_bytes(n: int) -> str:

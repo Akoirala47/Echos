@@ -11,12 +11,12 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 logger = logging.getLogger(__name__)
 
-_MODEL_ID = "nvidia/canary-qwen-2.5b"
-_FALLBACK_BYTES = 5 * 1024 ** 3  # used only if HF Hub metadata unavailable
+_MODEL_ID = "openai/whisper-large-v3"
+_FALLBACK_BYTES = 3 * 1024 ** 3  # ~3 GB actual size
 
 
 class ModelManager:
-    """Owns the Canary-Qwen ASR model lifecycle: cache check, download, load, infer."""
+    """Owns the Whisper large-v3 ASR model lifecycle: cache, download, load, infer."""
 
     MODEL_ID = _MODEL_ID
 
@@ -57,7 +57,7 @@ class ModelManager:
     # ------------------------------------------------------------------
 
     def is_cached(self) -> bool:
-        """Return True if at least one model file exists locally (may be incomplete)."""
+        """Return True if at least one model file exists locally."""
         try:
             from huggingface_hub import try_to_load_from_cache
             return try_to_load_from_cache(self.MODEL_ID, "config.json") is not None
@@ -65,7 +65,7 @@ class ModelManager:
             return False
 
     def is_fully_cached(self) -> bool:
-        """Return True only when the complete model snapshot is present locally."""
+        """Return True only when the complete snapshot is present locally."""
         try:
             from huggingface_hub import snapshot_download
             snapshot_download(self.MODEL_ID, local_files_only=True)
@@ -78,19 +78,16 @@ class ModelManager:
     # ------------------------------------------------------------------
 
     def _get_expected_bytes(self) -> int:
-        """Query HF Hub for the actual total model size."""
         try:
             from huggingface_hub import model_info
             info = model_info(self.MODEL_ID)
-            total = sum(
-                s.size for s in (info.siblings or []) if s.size is not None
-            )
+            total = sum(s.size for s in (info.siblings or []) if s.size is not None)
             return total if total > 0 else _FALLBACK_BYTES
         except Exception:
             return _FALLBACK_BYTES
 
     def download(self, progress_callback: Callable[[int, int], None] | None = None) -> None:
-        """Download model weights with smooth, non-negative progress reporting."""
+        """Download Whisper large-v3 weights with smooth non-negative progress."""
         import threading as _threading
         from huggingface_hub import snapshot_download, constants as hf_constants
 
@@ -101,22 +98,20 @@ class ModelManager:
         model_cache_dir = cache_dir / f"models--{self.MODEL_ID.replace('/', '--')}"
 
         stop_polling = _threading.Event()
-        # Track the high-water mark so progress never goes backwards.
         _state = {"max_seen": 0}
 
         def _poll_size() -> None:
             while not stop_polling.is_set():
                 try:
-                    # Only count complete blobs — skip .incomplete temp files.
                     done = sum(
                         f.stat().st_size
                         for f in model_cache_dir.rglob("*")
-                        if f.is_file() and not f.name.endswith(".incomplete")
+                        if f.is_file()
+                        and not f.name.endswith(".incomplete")
                         and not f.name.endswith(".lock")
                     )
                 except OSError:
                     done = 0
-                # Clamp: never go backwards, never exceed expected total.
                 done = max(_state["max_seen"], done)
                 done = min(done, expected_bytes)
                 _state["max_seen"] = done
@@ -135,76 +130,30 @@ class ModelManager:
             progress_callback(expected_bytes, expected_bytes)
 
     # ------------------------------------------------------------------
-    # Load  (tries multiple strategies — Canary may need NeMo or custom class)
+    # Load
     # ------------------------------------------------------------------
 
     def load(self) -> None:
-        """Load model into memory. Tries multiple loading strategies in order."""
+        """Load Whisper large-v3 into memory on the appropriate device."""
         with self._load_lock:
             if self._model is not None:
                 return
 
             import torch
+            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+
+            logger.info("Loading Whisper processor from %s", self.MODEL_ID)
+            self._processor = AutoProcessor.from_pretrained(self.MODEL_ID)
+
             dtype = torch.float16 if self._device == "mps" else torch.float32
-            errors: list[str] = []
-
-            # Strategy 1: AutoModel with trust_remote_code (handles custom architectures)
-            try:
-                from transformers import AutoModel, AutoProcessor
-                logger.info("Trying AutoModel + AutoProcessor for %s", self.MODEL_ID)
-                self._processor = AutoProcessor.from_pretrained(
-                    self.MODEL_ID, trust_remote_code=True
-                )
-                self._model = (
-                    AutoModel.from_pretrained(
-                        self.MODEL_ID,
-                        torch_dtype=dtype,
-                        trust_remote_code=True,
-                    )
-                    .to(self._device)
-                )
-                self._model.eval()
-                logger.info("Loaded via AutoModel on %s", self._device)
-                return
-            except Exception as exc:
-                errors.append(f"AutoModel: {exc}")
-                logger.warning("AutoModel failed: %s", exc)
-
-            # Strategy 2: AutoModelForSpeechSeq2Seq (standard ASR path)
-            try:
-                from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-                logger.info("Trying AutoModelForSpeechSeq2Seq for %s", self.MODEL_ID)
-                self._processor = AutoProcessor.from_pretrained(self.MODEL_ID)
-                self._model = (
-                    AutoModelForSpeechSeq2Seq.from_pretrained(
-                        self.MODEL_ID,
-                        torch_dtype=dtype,
-                    )
-                    .to(self._device)
-                )
-                self._model.eval()
-                logger.info("Loaded via AutoModelForSpeechSeq2Seq on %s", self._device)
-                return
-            except Exception as exc:
-                errors.append(f"AutoModelForSpeechSeq2Seq: {exc}")
-                logger.warning("AutoModelForSpeechSeq2Seq failed: %s", exc)
-
-            # Strategy 3: NeMo EncDecMultiTaskModel (NVIDIA Canary native format)
-            try:
-                logger.info("Trying NeMo EncDecMultiTaskModel for %s", self.MODEL_ID)
-                from nemo.collections.asr.models import EncDecMultiTaskModel  # type: ignore
-                self._model = EncDecMultiTaskModel.from_pretrained(self.MODEL_ID)
-                self._processor = None  # NeMo handles processing internally
-                logger.info("Loaded via NeMo EncDecMultiTaskModel")
-                return
-            except Exception as exc:
-                errors.append(f"NeMo EncDecMultiTaskModel: {exc}")
-                logger.warning("NeMo load failed: %s", exc)
-
-            raise RuntimeError(
-                f"Could not load {self.MODEL_ID} with any known strategy.\n\n"
-                + "\n".join(f"  • {e}" for e in errors)
-            )
+            logger.info("Loading model on device=%s dtype=%s", self._device, dtype)
+            self._model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                self.MODEL_ID,
+                torch_dtype=dtype,
+                low_cpu_mem_usage=True,
+            ).to(self._device)
+            self._model.eval()
+            logger.info("Whisper large-v3 loaded on %s", self._device)
 
     def is_loaded(self) -> bool:
         return self._model is not None
@@ -215,15 +164,12 @@ class ModelManager:
 
     def transcribe(self, audio_chunk: np.ndarray, sample_rate: int = 16000) -> str:
         """Transcribe a float32 mono audio chunk. Returns transcribed text."""
-        if self._model is None:
+        if self._model is None or self._processor is None:
             raise RuntimeError("Model not loaded — call load() first")
 
         import torch
 
-        # NeMo path (no processor)
-        if self._processor is None:
-            return self._transcribe_nemo(audio_chunk, sample_rate)
-
+        # Whisper processor pads/truncates to 30s automatically.
         inputs = self._processor(
             audio_chunk,
             sampling_rate=sample_rate,
@@ -231,26 +177,23 @@ class ModelManager:
         ).to(self._device)
 
         with torch.no_grad():
-            output_ids = self._model.generate(**inputs)
+            generated_ids = self._model.generate(
+                inputs["input_features"],
+                language="en",
+                task="transcribe",
+            )
 
-        return self._processor.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
-
-    def _transcribe_nemo(self, audio_chunk: np.ndarray, sample_rate: int) -> str:
-        """Transcribe using a NeMo model (no HF processor)."""
-        import tempfile, soundfile as sf
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            sf.write(tmp.name, audio_chunk, sample_rate)
-            result = self._model.transcribe([tmp.name])
-        import os; os.unlink(tmp.name)
-        return result[0] if result else ""
+        return self._processor.batch_decode(
+            generated_ids, skip_special_tokens=True
+        )[0].strip()
 
 
 # ---------------------------------------------------------------------------
-# ModelDownloadWorker — QThread wrapper around ModelManager.download()
+# ModelDownloadWorker
 # ---------------------------------------------------------------------------
 
 class ModelDownloadWorker(QThread):
-    """Downloads Canary-Qwen weights in a background thread."""
+    """Downloads Whisper large-v3 weights in a background thread."""
 
     progress = pyqtSignal(int, int)  # (bytes_done, bytes_total)
     done = pyqtSignal()

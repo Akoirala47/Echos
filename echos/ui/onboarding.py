@@ -174,7 +174,7 @@ class DownloadPage(QWizardPage):
         super().__init__(parent)
         self.setTitle("Download Transcription Model")
         self.setSubTitle(
-            "Canary-Qwen 2.5B runs fully on your Mac. "
+            "Whisper large-v3 runs fully on your Mac. "
             "Your audio never leaves your device."
         )
 
@@ -182,7 +182,7 @@ class DownloadPage(QWizardPage):
         self._progress_widget = ModelProgressWidget()
         self._progress_widget.background_requested.connect(self._go_background)
 
-        self._info = QLabel("This happens once (\u223c5 GB).")
+        self._info = QLabel("This happens once (\u223c3 GB).")
         self._info.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self._done = False

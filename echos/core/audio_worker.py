@@ -24,7 +24,7 @@ _LEVEL_INTERVAL = 1.0 / 30
 
 
 class AudioWorker(QThread):
-    """Captures microphone audio and transcribes chunks with Canary-Qwen.
+    """Captures microphone audio and transcribes chunks with Whisper large-v3.
 
     Signals
     -------
