@@ -4,6 +4,11 @@ Run from the project root:
     python build/setup.py py2app
 """
 
+import sys
+# modulegraph recursively walks torch's import graph which exceeds the default
+# limit of 1000.  5000 is sufficient; 10000 is a safe upper bound.
+sys.setrecursionlimit(10000)
+
 from setuptools import setup
 
 APP = ["scout/main.py"]
@@ -79,6 +84,14 @@ OPTIONS = {
         "pytest",
         "black",
         "ruff",
+        # Torch internals that modulegraph doesn't need to trace —
+        # they are included via the "packages" list as binary copies.
+        "torch.testing",
+        "torch.utils.benchmark",
+        "torch.utils.bottleneck",
+        "torch.distributed",
+        "torch.fx",
+        "caffe2",
     ],
     # Keep debug symbols for crash reports; set to 1 for release.
     "strip": False,
