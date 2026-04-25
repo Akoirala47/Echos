@@ -5,16 +5,14 @@ __pycache__/
 *.pyd
 *.egg
 *.egg-info/
-dist/
-build/
 .eggs/
 .venv/
 venv/
 env/
 
-# py2app outputs
+# py2app intermediate output (NOT the build/ scripts directory)
+build/build/
 dist/
-build/
 
 # macOS
 .DS_Store
