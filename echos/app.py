@@ -127,10 +127,11 @@ class AppController:
                 self._window.status_bar_widget.set_status("#F39C12", "Loading model\u2026")
                 self._start_model_load()
             elif self._model_manager.is_cached():
-                # Partial download — don't attempt to load, would crash PyTorch.
+                # Partial download — resume automatically instead of asking user.
                 self._window.status_bar_widget.set_status(
-                    "#F39C12", "Download incomplete \u2014 re-open Settings to finish"
+                    "#F39C12", "Resuming incomplete download\u2026"
                 )
+                self._start_model_download()
             else:
                 self._window.status_bar_widget.set_status("#E74C3C", "Model not downloaded")
 
@@ -460,19 +461,48 @@ class AppController:
 
     def _on_settings(self) -> None:
         dlg = SettingsWindow(self._config, self._model_manager, self._window)
-        if dlg.exec():
-            updated = dlg.get_config()
-            self._config.update(updated)
-            self._config_mgr.save(self._config)
-            # Reload courses in sidebar in case they changed.
-            self._window.sidebar.load_courses(self._config.get("courses", []))
-            # Update vault path in status bar.
-            self._window.status_bar_widget.set_vault_path(
-                self._config.get("vault_path", "")
-            )
-            # Apply device change if needed.
-            new_device = self._config.get("inference_device", "auto")
-            self._model_manager.set_device(new_device)
+        dlg.exec()
+        # Always save even if dismissed via redownload (dlg.accept() was called).
+        updated = dlg.get_config()
+        self._config.update(updated)
+        self._config_mgr.save(self._config)
+        self._window.sidebar.load_courses(self._config.get("courses", []))
+        self._window.status_bar_widget.set_vault_path(self._config.get("vault_path", ""))
+        new_device = self._config.get("inference_device", "auto")
+        self._model_manager.set_device(new_device)
+
+        if dlg._redownload_requested:
+            self._start_model_download()
+
+    # ------------------------------------------------------------------
+    # Model download (triggered from settings re-download or incomplete cache)
+    # ------------------------------------------------------------------
+
+    def _start_model_download(self) -> None:
+        self._window.status_bar_widget.set_status("#F39C12", "Starting download\u2026")
+        self._download_worker = ModelDownloadWorker(self._model_manager)
+        self._download_worker.progress.connect(self._on_download_progress)
+        self._download_worker.done.connect(self._on_download_done)
+        self._download_worker.error.connect(self._on_download_error)
+        self._download_worker.start()
+
+    def _on_download_progress(self, done: int, total: int) -> None:
+        pct = int(done / total * 100) if total > 0 else 0
+        gb_done = done / 1024 ** 3
+        gb_total = total / 1024 ** 3
+        self._window.status_bar_widget.set_status(
+            "#F39C12",
+            f"Downloading model\u2026 {gb_done:.1f} / {gb_total:.1f} GB ({pct}%)",
+        )
+
+    def _on_download_done(self) -> None:
+        self._window.status_bar_widget.set_status("#F39C12", "Download complete \u2014 loading model\u2026")
+        self._start_model_load()
+
+    def _on_download_error(self, message: str) -> None:
+        self._window.status_bar_widget.set_status(
+            "#E74C3C", f"Download failed: {message[:80]}"
+        )
 
     # ------------------------------------------------------------------
     # Help menu actions

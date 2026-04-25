@@ -197,7 +197,8 @@ class DownloadPage(QWizardPage):
         self.setLayout(layout)
 
     def initializePage(self) -> None:  # noqa: N802
-        if self._model_manager.is_cached():
+        # Only skip download if ALL files are present — partial cache still needs downloading.
+        if self._model_manager.is_fully_cached():
             self._progress_widget.mark_done()
             self._done = True
             self.completeChanged.emit()

@@ -129,7 +129,7 @@ class NotesPanel(QWidget):
         # -- Rendered view --
         self._browser = QTextBrowser()
         self._browser.setOpenExternalLinks(False)
-        self._browser.setStyleSheet("border: none; background: white;")
+        self._browser.setStyleSheet("border: none; background: palette(base);")
 
         # -- Raw edit view --
         self._raw_edit = QTextEdit()

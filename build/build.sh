@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-VERSION="1.0.0"
+VERSION="${VERSION:-1.0.1}"
 APP_NAME="Echos"
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
 

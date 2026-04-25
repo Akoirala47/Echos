@@ -47,7 +47,7 @@ jobs:
       - name: Build Echos.app and Echos.dmg
         run: |
           chmod +x build/build.sh
-          ./build/build.sh
+          VERSION="${GITHUB_REF_NAME#v}" ./build/build.sh
 
       # ---------------------------------------------------------------
       - name: Verify DMG was created

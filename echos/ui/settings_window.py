@@ -289,7 +289,7 @@ class _TranscriptionTab(QWidget):
         reply = QMessageBox.question(
             self,
             "Re-download Model",
-            "This will delete the cached model weights and re-download ~5 GB. Continue?",
+            "This will delete the cached model weights and start a fresh ~5 GB download. Continue?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -302,10 +302,16 @@ class _TranscriptionTab(QWidget):
                 )
                 if cache_dir.exists():
                     shutil.rmtree(cache_dir)
-                QMessageBox.information(
-                    self, "Cache Cleared",
-                    "Model cache deleted. Restart Scout to re-download."
-                )
+                # Signal AppController to start download — close settings first.
+                self._needs_redownload = True
+                # Find and accept the parent SettingsWindow dialog.
+                p = self.parent()
+                while p is not None:
+                    if hasattr(p, "_redownload_requested"):
+                        p._redownload_requested = True
+                        p.accept()
+                        return
+                    p = p.parent()
             except Exception as exc:
                 QMessageBox.warning(self, "Error", str(exc))
 
@@ -411,9 +417,10 @@ class SettingsWindow(QDialog):
         parent=None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Scout Settings")
+        self.setWindowTitle("Echos Settings")
         self.setMinimumSize(520, 440)
 
+        self._redownload_requested = False  # set by _TranscriptionTab._redownload()
         self._config = dict(config)
 
         self._tabs = QTabWidget()
