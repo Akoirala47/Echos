@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-green)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**Echos** is a native macOS app that turns your lectures into structured Obsidian notes — named after Koichi Hirose's stand from JoJo's Bizarre Adventure Part 4.
+**Echos** is a native macOS app that turns your lectures into structured Obsidian notes.
 
 It transcribes your microphone locally using [Whisper large-v3](https://huggingface.co/openai/whisper-large-v3) — running entirely on Apple Silicon via Metal Performance Shaders — then sends the transcript to Gemma 4 31B (via Google AI) to produce clean, formatted markdown notes. Notes are saved directly into your Obsidian vault with YAML front matter injected automatically.
 
