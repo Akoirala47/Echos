@@ -44,13 +44,22 @@ OPTIONS = {
         "transformers",
         "sounddevice",
         "numpy",
-        "google.generativeai",
         "huggingface_hub",
         "markdown",
         "soundfile",
         "scout",
+        # google.generativeai is a PEP 420 namespace package; imp.find_module()
+        # cannot locate it so it must NOT be listed here.  modulegraph traces it
+        # automatically via the import in notes_worker.py.
     ],
     "includes": [
+        # google.generativeai is a namespace package; include submodules explicitly
+        # so modulegraph doesn't miss them.
+        "google",
+        "google.generativeai",
+        "google.generativeai.types",
+        "google.ai.generativelanguage_v1beta",
+        # Scout modules
         "scout.main",
         "scout.app",
         "scout.config.config_manager",
