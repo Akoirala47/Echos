@@ -30,13 +30,12 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       # ---------------------------------------------------------------
-      - name: Install Node.js (for create-dmg)
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install create-dmg
-        run: npm install -g create-dmg
+      # Use Homebrew create-dmg (create-dmg/create-dmg), NOT the npm
+      # package (sindresorhus/create-dmg) — they are different tools with
+      # different CLIs.  The Homebrew version supports --background,
+      # --window-size, --icon, --app-drop-link, etc.
+      - name: Install create-dmg (Homebrew)
+        run: brew install create-dmg
 
       # ---------------------------------------------------------------
       - name: Generate assets (icon, DMG background)

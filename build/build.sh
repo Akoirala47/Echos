@@ -86,13 +86,12 @@ fi
 DMG_OUT="dist/${DMG_NAME}"
 
 create-dmg \
-  --volname     "${APP_NAME}" \
-  --background  "assets/dmg_background.png" \
-  --window-size 540 380 \
-  --icon-size   100 \
-  --icon        "${APP_NAME}.app" 130 190 \
-  --app-drop-link 410 190 \
-  --no-internet-enable \
+  --volname        "${APP_NAME}" \
+  --background     "assets/dmg_background.png" \
+  --window-size    540 380 \
+  --icon-size      100 \
+  --icon           "${APP_NAME}.app" 130 190 \
+  --app-drop-link  410 190 \
   "$DMG_OUT" \
   "$APP_PATH"
 
