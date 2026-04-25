@@ -10,6 +10,8 @@ jobs:
   build:
     name: Build Scout.dmg (macOS Apple Silicon)
     runs-on: macos-14        # GitHub's M1 runner
+    permissions:
+      contents: write        # required to create GitHub Releases and upload assets
 
     steps:
       # ---------------------------------------------------------------
