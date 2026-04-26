@@ -3,91 +3,61 @@ from __future__ import annotations
 import ctypes
 import logging
 import logging.handlers
-import os
 import sys
 from pathlib import Path
 
 
-def _fix_libsndfile() -> None:
-    """Work around the py2app + soundfile dylib issue.
-
-    py2app zips Python packages into python311.zip, so soundfile's bundled
-    libsndfile_arm64.dylib ends up at a path like:
-        .../python311.zip/_soundfile_data/libsndfile_arm64.dylib
-    which cannot be dlopen'd (errno=20, ENOTDIR — it's inside a zip).
-    soundfile then falls back to ctypes.util.find_library('sndfile'), which
-    returns the build-machine Homebrew path that doesn't exist in the bundle.
-
-    Fix: monkey-patch ctypes.util.find_library so that any 'sndfile' lookup
-    returns our bundled dylib from Contents/Frameworks/, where py2app copied
-    it via the 'frameworks' setup.py option.  Also pre-load it with RTLD_GLOBAL
-    so cffi/ctypes find it already resident in the process if they use a bare
-    library name.
-
-    Must be called BEFORE soundfile (or transformers.audio_utils) is imported.
-    """
-    import ctypes.util as _ctypes_util
-
-    # 1. Locate libsndfile: prefer bundle-internal copy, then source-tree, then system.
-    dylib_path: Path | None = None
-
-    # a) Inside py2app bundle: Contents/Frameworks/libsndfile*.dylib
+def _find_framework_dylib(stem: str) -> Path | None:
+    """Return the first matching dylib from Contents/Frameworks or system paths."""
     exe = Path(sys.executable).resolve()
     if exe.parent.name == "MacOS":
         frameworks = exe.parent.parent / "Frameworks"
-        for candidate in frameworks.glob("libsndfile*.dylib"):
-            if candidate.is_file():
-                dylib_path = candidate
-                break
-
-    # b) soundfile wheel's own _soundfile_data directory (works from source)
-    if dylib_path is None:
-        try:
-            import soundfile as _sf  # noqa: WPS433
-            sf_data = Path(_sf.__file__).parent / "_soundfile_data"
-            if not sf_data.is_dir():
-                # May be inside zip; try to construct real filesystem path.
-                sf_data = Path(os.path.dirname(os.path.realpath(_sf.__file__))) / "_soundfile_data"
-            for candidate in sf_data.glob("libsndfile*.dylib"):
+        if frameworks.is_dir():
+            for candidate in frameworks.glob(f"{stem}*.dylib"):
                 if candidate.is_file():
-                    dylib_path = candidate
-                    break
-        except Exception:
-            pass
+                    return candidate
+    for brew_path in (f"/opt/homebrew/lib/{stem}.dylib", f"/opt/homebrew/lib/{stem}.2.dylib",
+                      f"/usr/local/lib/{stem}.dylib", f"/usr/local/lib/{stem}.2.dylib"):
+        p = Path(brew_path)
+        if p.is_file():
+            return p
+    return None
 
-    # c) Homebrew / system paths
-    if dylib_path is None:
-        for system_path_str in (
-            "/opt/homebrew/lib/libsndfile.dylib",
-            "/opt/homebrew/lib/libsndfile.1.dylib",
-            "/usr/local/lib/libsndfile.dylib",
-            "/usr/local/lib/libsndfile.1.dylib",
-        ):
-            p = Path(system_path_str)
-            if p.is_file():
-                dylib_path = p
-                break
 
-    if dylib_path is None:
-        return  # nothing found — let soundfile raise its own error
+def _fix_native_audio_libs() -> None:
+    """Patch ctypes.util.find_library for soundfile (libsndfile) and sounddevice (portaudio).
 
-    dylib_str = str(dylib_path)
+    py2app zips Python packages into python3XX.zip.  Both soundfile and sounddevice
+    bundle their native dylibs inside the package data directory, but dlopen() cannot
+    open files inside a zip (errno=20, ENOTDIR).  They then fall back to
+    ctypes.util.find_library which returns the build-machine Homebrew path — a path
+    that does not exist in the deployed .app bundle.
 
-    # 2. Pre-load with RTLD_GLOBAL so bare-name lookups (ctypes.CDLL('libsndfile'))
-    #    succeed even if soundfile's cffi uses a different strategy.
-    try:
-        ctypes.CDLL(dylib_str, mode=ctypes.RTLD_GLOBAL)
-    except OSError:
-        pass
+    We bundle both dylibs into Contents/Frameworks/ via the py2app 'frameworks' option,
+    then intercept find_library here so each package finds the correct bundled path.
 
-    # 3. Monkey-patch find_library so soundfile's fallback chain returns our path
-    #    instead of the missing Homebrew path.  This is the critical fix for the
-    #    zip case: bundled dylib fails → find_library is called → we intercept.
+    Must be called BEFORE soundfile or sounddevice are imported.
+    """
+    import ctypes.util as _ctypes_util
+
+    sndfile_path = _find_framework_dylib("libsndfile")
+    portaudio_path = _find_framework_dylib("libportaudio")
+
+    # Pre-load with RTLD_GLOBAL so bare-name ctypes.CDLL calls also find them.
+    for p in (sndfile_path, portaudio_path):
+        if p is not None:
+            try:
+                ctypes.CDLL(str(p), mode=ctypes.RTLD_GLOBAL)
+            except OSError:
+                pass
+
     _original_find_library = _ctypes_util.find_library
 
     def _patched_find_library(name: str) -> str | None:
-        if name in ("sndfile", "libsndfile", "libsndfile.dylib"):
-            return dylib_str
+        if name in ("sndfile", "libsndfile") and sndfile_path is not None:
+            return str(sndfile_path)
+        if name in ("portaudio", "portaudio-2.0", "libportaudio") and portaudio_path is not None:
+            return str(portaudio_path)
         return _original_find_library(name)
 
     _ctypes_util.find_library = _patched_find_library
@@ -118,7 +88,7 @@ def _setup_logging() -> None:
 
 def main() -> None:
     _setup_logging()
-    _fix_libsndfile()
+    _fix_native_audio_libs()
     logger = logging.getLogger(__name__)
     logger.info("Echos starting up")
 
