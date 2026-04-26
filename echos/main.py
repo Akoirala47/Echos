@@ -336,6 +336,24 @@ def main() -> None:
 
     window.show()
     logger.info("Main window shown")
+
+    # macOS: make title bar blend with the warm parchment window background
+    try:
+        from AppKit import NSApplication, NSColor
+        nsapp = NSApplication.sharedApplication()
+        if nsapp.windows():
+            nswin = nsapp.windows()[0]
+            nswin.setTitlebarAppearsTransparent_(True)
+            nswin.setTitleVisibility_(1)   # NSWindowTitleHidden
+            nswin.setBackgroundColor_(
+                NSColor.colorWithSRGBRed_green_blue_alpha_(
+                    0xfb / 255.0, 0xfa / 255.0, 0xf6 / 255.0, 1.0
+                )
+            )
+            nswin.setMovableByWindowBackground_(True)
+    except Exception:
+        pass
+
     sys.exit(app.exec())
 
 

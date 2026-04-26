@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from echos.utils.markdown import build_prompt, build_system_instruction
 
 logger = logging.getLogger(__name__)
+
+_THINKING_RE = re.compile(
+    r'<(?:thinking|thought)>.*?</(?:thinking|thought)>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _strip_thinking(text: str) -> str:
+    """Remove LLM internal reasoning blocks from generated text."""
+    cleaned = _THINKING_RE.sub('', text)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
 
 
 class NotesWorker(QThread):
@@ -84,7 +97,7 @@ class NotesWorker(QThread):
                 full += text
                 self.chunk_ready.emit(text)
 
-            self.done.emit(full)
+            self.done.emit(_strip_thinking(full))
 
         except Exception as exc:
             logger.exception("NotesWorker failed")

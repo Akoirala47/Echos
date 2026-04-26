@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMenu,
@@ -180,6 +181,7 @@ class _SectionHeader(QWidget):
 
 class _VaultTree(QTreeWidget):
     folder_selected = pyqtSignal(str)
+    note_selected   = pyqtSignal(str)   # emits str(Path)
     record_here     = pyqtSignal(str)
 
     _MAX_DEPTH = 5
@@ -277,6 +279,8 @@ class _VaultTree(QTreeWidget):
         if data.get("kind") == "folder" and self._vault_root:
             rel = str(data["path"].relative_to(self._vault_root))
             self.folder_selected.emit(rel)
+        elif data.get("kind") == "note":
+            self.note_selected.emit(str(data["path"]))
 
 
 # ── Color swatch ──────────────────────────────────────────────────────────────
@@ -397,13 +401,13 @@ class _TopicRow(QWidget):
         )
 
         self._name_lbl = QLabel(topic.get("name", ""))
-        self._name_lbl.setStyleSheet(f"font-size: 12.5px; color: {TEXT};")
+        self._name_lbl.setStyleSheet(f"font-size: 12.5px; color: {TEXT}; background: transparent;")
 
         folder = topic.get("folder", "")
         parts = folder.replace("\\", "/").split("/")
         tail  = " / ".join(parts[-2:]) if len(parts) >= 2 else folder
         self._path_lbl = QLabel(tail)
-        self._path_lbl.setStyleSheet(f"font-size: 10.5px; color: {TEXT_FAINT};")
+        self._path_lbl.setStyleSheet(f"font-size: 10.5px; color: {TEXT_FAINT}; background: transparent;")
         self._path_lbl.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
@@ -420,7 +424,7 @@ class _TopicRow(QWidget):
         self._selected = v
         weight = "600" if v else "400"
         self._name_lbl.setStyleSheet(
-            f"font-size: 12.5px; font-weight: {weight}; color: {TEXT};"
+            f"font-size: 12.5px; font-weight: {weight}; color: {TEXT}; background: transparent;"
         )
         self.update()
 
@@ -437,8 +441,7 @@ class _TopicRow(QWidget):
         self._hovered = False
         self.update()
 
-    def paintEvent(self, event) -> None:
-        """Paint background behind children — avoids QSS cascade issues."""
+    def paintEvent(self, _event) -> None:
         if self._selected or self._hovered:
             p = QPainter(self)
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -446,7 +449,6 @@ class _TopicRow(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(QRectF(self.rect().adjusted(0, 1, 0, -1)), 5, 5)
             p.end()
-        super().paintEvent(event)
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -460,6 +462,7 @@ class SidebarWidget(QWidget):
     courses_reordered    = pyqtSignal(list)
     settings_clicked     = pyqtSignal()
     vault_folder_selected = pyqtSignal(str)
+    note_selected        = pyqtSignal(str)   # emits str(Path) of .md file
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -509,22 +512,28 @@ class SidebarWidget(QWidget):
 
         # ── VAULT section ─────────────────────────────────────────────────────
         vault_sec_hdr = _SectionHeader("Vault")
-        # + and ⟳ buttons
-        for label, tip in [("+ ", "New folder"), ("⟳", "Refresh")]:
-            btn = QPushButton(label)
-            btn.setFixedSize(18, 18)
-            btn.setToolTip(tip)
-            btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; border: none;"
-                f" font-size: 11px; color: {TEXT_MUTED}; padding: 0; }}"
-                f"QPushButton:hover {{ color: {TEXT}; }}"
-            )
-            if label == "⟳":
-                btn.clicked.connect(lambda: self._on_vault_changed())
-            vault_sec_hdr.add_right_widget(btn)
+        _btn_style = (
+            f"QPushButton {{ background: transparent; border: none;"
+            f" font-size: 11px; color: {TEXT_MUTED}; padding: 0; }}"
+            f"QPushButton:hover {{ color: {TEXT}; }}"
+        )
+        vault_add_btn = QPushButton("+")
+        vault_add_btn.setFixedSize(18, 18)
+        vault_add_btn.setToolTip("New folder")
+        vault_add_btn.setStyleSheet(_btn_style)
+        vault_add_btn.clicked.connect(self._on_create_folder)
+        vault_sec_hdr.add_right_widget(vault_add_btn)
+
+        vault_refresh_btn = QPushButton("⟳")
+        vault_refresh_btn.setFixedSize(18, 18)
+        vault_refresh_btn.setToolTip("Refresh")
+        vault_refresh_btn.setStyleSheet(_btn_style)
+        vault_refresh_btn.clicked.connect(self._on_vault_changed)
+        vault_sec_hdr.add_right_widget(vault_refresh_btn)
 
         self._vault_tree = _VaultTree()
         self._vault_tree.folder_selected.connect(self.vault_folder_selected)
+        self._vault_tree.note_selected.connect(self.note_selected)
         vault_sec_hdr.toggled.connect(self._vault_tree.setVisible)
 
         vault_section = QWidget()
@@ -692,3 +701,18 @@ class SidebarWidget(QWidget):
     def _on_vault_changed(self) -> None:
         if self._vault_path:
             self._vault_tree.load_vault(self._vault_path)
+
+    def _on_create_folder(self) -> None:
+        if not self._vault_path:
+            QMessageBox.warning(self, "No Vault", "Set a vault path in Settings first.")
+            return
+        name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        folder = Path(self._vault_path) / name
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            self._vault_tree.load_vault(self._vault_path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Error", f"Could not create folder:\n{exc}")

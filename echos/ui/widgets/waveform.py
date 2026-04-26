@@ -127,9 +127,12 @@ class WaveformWidget(QWidget):
         painter.setBrush(color)
         painter.setPen(Qt.PenStyle.NoPen)
 
+        w = self.width()
         h = self.height()
+        slot_w = w / _BAR_COUNT if _BAR_COUNT > 0 else (_BAR_W + _BAR_GAP)
+
         for i in range(_BAR_COUNT):
-            x     = i * (_BAR_W + _BAR_GAP)
+            x     = i * slot_w + (slot_w - _BAR_W) / 2.0
             bar_h = max(2.0, self._bar_heights[i] * h)
             y     = (h - bar_h) / 2.0
             path  = QPainterPath()

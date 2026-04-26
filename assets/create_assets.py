@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Generate placeholder app icon and DMG background for Echos.
+"""Generate Echos app icon and DMG background.
 
 Run once before building:
     python assets/create_assets.py
 
-Requires: macOS (uses iconutil).  Produces:
-    assets/icon_512.png       — 512×512 source PNG
-    assets/icon.icns          — macOS icon bundle
+Requires PyQt6 for the icon (already a project dependency).
+Produces:
+    assets/icon_1024.png       — 1024×1024 source PNG
+    assets/icon.icns           — macOS icon bundle
     assets/dmg_background.png — 540×380 DMG window background
 """
 
@@ -24,8 +25,9 @@ from pathlib import Path
 
 ASSETS = Path(__file__).parent
 
+
 # ---------------------------------------------------------------------------
-# Minimal PNG encoder (stdlib only — no Pillow needed)
+# Minimal PNG encoder (stdlib only — for DMG background)
 # ---------------------------------------------------------------------------
 
 def _png_chunk(tag: bytes, data: bytes) -> bytes:
@@ -34,11 +36,10 @@ def _png_chunk(tag: bytes, data: bytes) -> bytes:
 
 
 def _encode_png(width: int, height: int, pixels: list[tuple[int, int, int, int]]) -> bytes:
-    """Encode an RGBA pixel list (row-major) as PNG bytes."""
     ihdr_data = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
     raw = bytearray()
     for y in range(height):
-        raw.append(0)  # filter = None
+        raw.append(0)
         for x in range(width):
             r, g, b, a = pixels[y * width + x]
             raw += bytes([r, g, b, a])
@@ -56,78 +57,143 @@ def _write_png(path: Path, width: int, height: int, pixels: list[tuple[int, int,
 
 
 # ---------------------------------------------------------------------------
-# Icon pixel generator
+# Qt-based icon generator
 # ---------------------------------------------------------------------------
 
-# Echos brand blue
-_BLUE = (41, 128, 185)
-_DARK_BLUE = (31, 97, 141)
-_WHITE = (255, 255, 255)
+def _generate_icon_qt(size: int) -> bytes:
+    """Render the Echos icon at `size`×`size` using QPainter and return PNG bytes.
 
-
-def _icon_pixels(size: int) -> list[tuple[int, int, int, int]]:
-    """Return RGBA pixels for a size×size Echos icon.
-
-    Design: deep blue rounded square with a white compass-needle 'S' shape.
+    Design: warm cream rounded square, concentric pastel rings (rainbow),
+    stylised alien-listener face in the centre — mint orbs, golden eyes,
+    teal ear pads — inspired by the concept art.
     """
-    pixels = []
-    cx = cy = size / 2
-    outer_r = size * 0.46
-    corner_r = size * 0.18  # rounded-rect corner radius approximation
+    from PyQt6.QtCore import QBuffer, QByteArray, QPointF, QRectF, Qt
+    from PyQt6.QtGui import (
+        QBrush, QColor, QPainter, QPainterPath,
+        QPen, QPixmap, QRadialGradient,
+    )
+    from PyQt6.QtWidgets import QApplication
 
-    for y in range(size):
-        for x in range(size):
-            fx, fy = x + 0.5, y + 0.5
-            dx, dy = fx - cx, fy - cy
+    _app = QApplication.instance() or QApplication(sys.argv)
 
-            # Rounded square test: clamp corners
-            cdx = max(0.0, abs(dx) - (outer_r - corner_r))
-            cdy = max(0.0, abs(dy) - (outer_r - corner_r))
-            in_bg = math.hypot(cdx, cdy) <= corner_r
+    px = QPixmap(size, size)
+    px.fill(Qt.GlobalColor.transparent)
 
-            if not in_bg:
-                pixels.append((255, 255, 255, 0))  # transparent outside
-                continue
+    p = QPainter(px)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-            # Subtle radial gradient on background
-            dist = math.hypot(dx, dy) / outer_r
-            r = int(_BLUE[0] + (_DARK_BLUE[0] - _BLUE[0]) * dist * 0.5)
-            g = int(_BLUE[1] + (_DARK_BLUE[1] - _BLUE[1]) * dist * 0.5)
-            b = int(_BLUE[2] + (_DARK_BLUE[2] - _BLUE[2]) * dist * 0.5)
+    cx = cy = size / 2.0
 
-            # Draw a bold "S" glyph using Bézier-approximated rectangles
-            # Normalised coords: -0.5 .. +0.5 inside the icon square
-            nx = dx / size  # -0.5 .. +0.5
-            ny = dy / size
+    # Rounded-square clip
+    corner_r = size * 0.22
+    clip = QPainterPath()
+    clip.addRoundedRect(QRectF(0, 0, size, size), corner_r, corner_r)
+    p.setClipPath(clip)
 
-            # Top bar of S
-            in_top    = (-0.14 < nx < 0.14) and (-0.20 < ny < -0.12)
-            # Top-right of S
-            in_tr     = (0.06 < nx < 0.14) and (-0.20 < ny < -0.04)
-            # Middle bar of S
-            in_mid    = (-0.14 < nx < 0.14) and (-0.04 < ny < 0.04)
-            # Bottom-left of S
-            in_bl     = (-0.14 < nx < -0.06) and (0.04 < ny < 0.20)
-            # Bottom bar of S
-            in_bot    = (-0.14 < nx < 0.14) and (0.12 < ny < 0.20)
+    # Background: warm cream radial gradient
+    bg_grad = QRadialGradient(QPointF(cx, cy * 0.75), size * 0.65)
+    bg_grad.setColorAt(0.0, QColor("#faf8f4"))
+    bg_grad.setColorAt(1.0, QColor("#ece8de"))
+    p.fillPath(clip, QBrush(bg_grad))
 
-            # Rounded caps on each bar
-            cap_tl = math.hypot(nx + 0.14, ny + 0.20) < 0.04
-            cap_tr = math.hypot(nx - 0.14, ny + 0.20) < 0.04
-            cap_ml = math.hypot(nx + 0.14, ny)        < 0.04
-            cap_mr = math.hypot(nx - 0.14, ny)        < 0.04
-            cap_bl = math.hypot(nx + 0.14, ny - 0.20) < 0.04
-            cap_br = math.hypot(nx - 0.14, ny - 0.20) < 0.04
+    # Concentric pastel rings (outermost → innermost)
+    ring_palette = [
+        "#d4b8d4",  # lavender
+        "#b4d4c8",  # seafoam
+        "#f2c4a0",  # peach
+        "#f5dca0",  # golden yellow
+        "#a8d8c0",  # mint
+        "#b8c8e8",  # sky blue
+        "#e8b4c0",  # rose
+        "#c0d4b0",  # sage
+        "#d8c0d8",  # mauve
+        "#b0d8c8",  # aqua
+    ]
+    outer_r = size * 0.488
+    inner_r = size * 0.275
+    n_rings = len(ring_palette)
+    slot = (outer_r - inner_r) / n_rings
+    stroke_w = slot * 0.58
 
-            in_s = (in_top or in_tr or in_mid or in_bl or in_bot
-                    or cap_tl or cap_tr or cap_ml or cap_mr or cap_bl or cap_br)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    for i, hex_color in enumerate(ring_palette):
+        r = outer_r - i * slot - slot * 0.25
+        pen = QPen(QColor(hex_color))
+        pen.setWidthF(stroke_w)
+        p.setPen(pen)
+        p.drawEllipse(QPointF(cx, cy), r, r)
 
-            if in_s:
-                pixels.append((*_WHITE, 255))
-            else:
-                pixels.append((r, g, b, 255))
+    # ── Face oval ─────────────────────────────────────────────────────────────
+    face_rx = size * 0.172
+    face_ry = size * 0.198
+    face_grad = QRadialGradient(QPointF(cx - face_rx * 0.2, cy - face_ry * 0.3), face_rx * 1.4)
+    face_grad.setColorAt(0.0, QColor("#e8f0ec"))
+    face_grad.setColorAt(1.0, QColor("#d0dcd8"))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(face_grad))
+    p.drawEllipse(QPointF(cx, cy), face_rx, face_ry)
 
-    return pixels
+    # ── Forehead orbs (vertical stack of 5 — crown to brow only) ─────────────
+    orb_r = size * 0.0235
+    orb_top_y = cy - face_ry * 0.74
+    for oi in range(5):
+        oy = orb_top_y + oi * orb_r * 2.10
+        og = QRadialGradient(QPointF(cx - orb_r * 0.35, oy - orb_r * 0.35), orb_r)
+        og.setColorAt(0.0, QColor("#7dd8b8"))
+        og.setColorAt(1.0, QColor("#52b898"))
+        p.setBrush(QBrush(og))
+        p.drawEllipse(QPointF(cx, oy), orb_r, orb_r)
+
+    # ── Golden eyes ───────────────────────────────────────────────────────────
+    eye_rx = size * 0.053
+    eye_ry = size * 0.029
+    eye_cy = cy - size * 0.016
+    for ex in (cx - size * 0.068, cx + size * 0.068):
+        # Iris gradient
+        eg = QRadialGradient(QPointF(ex - eye_rx * 0.3, eye_cy - eye_ry * 0.3), eye_rx)
+        eg.setColorAt(0.0, QColor("#f8c84a"))
+        eg.setColorAt(1.0, QColor("#c88020"))
+        p.setBrush(QBrush(eg))
+        p.drawEllipse(QPointF(ex, eye_cy), eye_rx, eye_ry)
+        # Pupil
+        p.setBrush(QBrush(QColor("#7a4808")))
+        p.drawEllipse(QPointF(ex, eye_cy), eye_rx * 0.38, eye_ry * 0.40)
+        # Highlight
+        p.setBrush(QBrush(QColor("#fffbe8")))
+        p.drawEllipse(QPointF(ex - eye_rx * 0.22, eye_cy - eye_ry * 0.25), eye_rx * 0.18, eye_ry * 0.20)
+
+    # ── Teal ear pads ─────────────────────────────────────────────────────────
+    ear_rx = size * 0.036
+    ear_ry = size * 0.045
+    ear_cy = cy + face_ry * 0.10
+    for ear_x in (cx - face_rx * 1.06, cx + face_rx * 1.06):
+        eg2 = QRadialGradient(QPointF(ear_x - ear_rx * 0.3, ear_cy - ear_ry * 0.3), ear_rx * 1.2)
+        eg2.setColorAt(0.0, QColor("#7dd8b8"))
+        eg2.setColorAt(1.0, QColor("#42a880"))
+        p.setBrush(QBrush(eg2))
+        p.drawEllipse(QPointF(ear_x, ear_cy), ear_rx, ear_ry)
+
+    # ── Subtle mouth ──────────────────────────────────────────────────────────
+    mouth_pen = QPen(QColor("#8899a8"))
+    mouth_pen.setWidthF(size * 0.009)
+    mouth_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    p.setPen(mouth_pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    mouth_path = QPainterPath()
+    mouth_path.moveTo(cx - size * 0.037, cy + face_ry * 0.50)
+    mouth_path.quadTo(cx, cy + face_ry * 0.64, cx + size * 0.037, cy + face_ry * 0.50)
+    p.drawPath(mouth_path)
+
+    p.end()
+
+    # Save to PNG bytes via QBuffer
+    byte_arr = QByteArray()
+    buf = QBuffer(byte_arr)
+    buf.open(QBuffer.OpenModeFlag.WriteOnly)
+    px.save(buf, "PNG")
+    buf.close()
+    return bytes(byte_arr)
 
 
 # ---------------------------------------------------------------------------
@@ -135,22 +201,17 @@ def _icon_pixels(size: int) -> list[tuple[int, int, int, int]]:
 # ---------------------------------------------------------------------------
 
 def _dmg_bg_pixels(width: int, height: int) -> list[tuple[int, int, int, int]]:
-    """Light grey gradient background with a subtle grid hint."""
     pixels = []
     for y in range(height):
         for x in range(width):
-            # Soft top-to-bottom gradient: #F0F0EE → #E4E4E2
             t = y / height
             base = int(240 - t * 12)
             r = g = base
             b = base - 2
-
-            # Very faint 40-px grid lines
             if x % 40 == 0 or y % 40 == 0:
                 r = max(r - 4, 0)
                 g = max(g - 4, 0)
                 b = max(b - 4, 0)
-
             pixels.append((r, g, b, 255))
     return pixels
 
@@ -163,7 +224,6 @@ _ICNS_SIZES = [16, 32, 64, 128, 256, 512, 1024]
 
 
 def _make_icns(source_png: Path, out_icns: Path) -> None:
-    """Build a .icns bundle from a high-resolution source PNG via iconutil."""
     if sys.platform != "darwin":
         print("  [skip] iconutil requires macOS — .icns not generated")
         return
@@ -171,7 +231,6 @@ def _make_icns(source_png: Path, out_icns: Path) -> None:
     iconset_dir = source_png.parent / "Echos.iconset"
     iconset_dir.mkdir(exist_ok=True)
 
-    # Resize source PNG to each required size using sips (macOS built-in).
     for sz in _ICNS_SIZES:
         for scale, suffix in [(1, ""), (2, "@2x")]:
             actual = sz * scale
@@ -199,24 +258,28 @@ def _make_icns(source_png: Path, out_icns: Path) -> None:
 def main() -> None:
     print("Generating Echos assets…")
 
-    icon_png = ASSETS / "icon_512.png"
+    icon_png = ASSETS / "icon_1024.png"
     icon_icns = ASSETS / "icon.icns"
     dmg_bg = ASSETS / "dmg_background.png"
 
-    # icon_512.png
+    # icon_1024.png — generated with Qt for crisp anti-aliasing
     if not icon_png.exists():
-        print("Creating icon_512.png…")
-        pixels = _icon_pixels(512)
-        _write_png(icon_png, 512, 512, pixels)
+        print("Creating icon_1024.png…")
+        try:
+            png_bytes = _generate_icon_qt(1024)
+            icon_png.write_bytes(png_bytes)
+            print(f"  wrote {icon_png}")
+        except Exception as exc:
+            print(f"  Qt rendering failed ({exc}), skipping icon generation")
     else:
         print(f"  {icon_png} already exists, skipping")
 
     # icon.icns
-    if not icon_icns.exists():
+    if not icon_icns.exists() and icon_png.exists():
         print("Creating icon.icns…")
         _make_icns(icon_png, icon_icns)
     else:
-        print(f"  {icon_icns} already exists, skipping")
+        print(f"  {icon_icns} already exists or source missing, skipping")
 
     # dmg_background.png
     if not dmg_bg.exists():

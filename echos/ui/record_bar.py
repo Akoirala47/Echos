@@ -334,7 +334,7 @@ class RecordBarWidget(QWidget):
     def set_topic(self, name: str, color: str, breadcrumb: str) -> None:
         self._topic_lbl.setText(name)
         self._dot_lbl.setStyleSheet(
-            f"border-radius: 4px; background: {color}; margin-top: 1px;"
+            f"border-radius: 4px; background: {color};"
         )
         # breadcrumb arrives as "School › CS446 › Lectures" from app.py
         self._breadcrumb_lbl.setText(breadcrumb)

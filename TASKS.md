@@ -324,3 +324,16 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
 - [x] **T-C67** Light-only theme (`echos/utils/theme.py`) — exact mockup CSS var values.
 - [x] **T-C68** Fusion Qt style + warm QPalette applied at startup.
 - [x] **T-C69** All UI files use hardcoded light values; no `is_dark_mode()` branching.
+
+---
+
+## Phase 19 — UI Polish & Note Preview
+
+- [x] **T-P70** `echos/ui/sidebar.py` — Fix topic-row select indicator: add `background: transparent` to name/path labels so custom `paintEvent` selection color shows correctly; remove stale `super().paintEvent()` call.
+- [x] **T-P71** `echos/ui/widgets/waveform.py` — Distribute bars evenly across full widget width so waveform fills all available space up to the timer label.
+- [x] **T-P72** `echos/ui/sidebar.py` — Wire vault `+` button to `_on_create_folder`: prompts for name, creates directory, refreshes tree.
+- [x] **T-P73** `echos/main.py` — macOS title-bar integration: `setTitlebarAppearsTransparent_`, `NSWindowTitleHidden`, background color matching `WINDOW_BG`, movable by background.
+- [x] **T-P74** `echos/ui/record_bar.py` — Remove `margin-top: 1px` from dot label in `set_topic()` to fix vertical mis-alignment in header row.
+- [x] **T-P75** `echos/core/notes_worker.py` — Strip `<thinking>`/`<thought>` LLM reasoning blocks from generated notes before emitting `done` signal.
+- [x] **T-P76** `echos/ui/main_window.py` + `echos/ui/sidebar.py` + `echos/app.py` — Note file preview: clicking a `.md` file in the vault tree opens it in a `NotePreviewWidget` (stacked over the recording view) with a "← Back" button to return.
+- [x] **T-P77** `assets/create_assets.py` — New Qt-rendered app icon: warm rounded-square background, concentric pastel rings, stylised alien-listener face (mint orbs, golden eyes, teal ear pads).

@@ -1,20 +1,93 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from pathlib import Path
+
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
+    QHBoxLayout,
     QMainWindow,
+    QPushButton,
     QSplitter,
+    QStackedWidget,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
+    QLabel,
 )
 
-from echos.ui.notes_panel import NotesPanel
+from echos.ui.notes_panel import NotesPanel, _md_to_html
 from echos.ui.record_bar import RecordBarWidget
 from echos.ui.sidebar import SidebarWidget
 from echos.ui.status_bar import StatusBarWidget
 from echos.ui.transcript_panel import TranscriptPanel
-from echos.utils.theme import BORDER_SOFT, border_soft, panel_bg, window_bg
+from echos.utils.theme import (
+    BORDER_SOFT, TEXT, TEXT_MUTED, TEXT_FAINT,
+    border_soft, panel_bg, window_bg,
+)
+
+
+class NotePreviewWidget(QWidget):
+    """Full-panel note viewer that replaces the recording UI when a vault note is opened."""
+
+    closed = pyqtSignal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"NotePreviewWidget {{ background: {window_bg()}; }}")
+
+        # ── Header ────────────────────────────────────────────────────────────
+        back_btn = QPushButton("← Back")
+        back_btn.setFlat(True)
+        back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        back_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none;"
+            f" font-size: 12.5px; font-weight: 600; color: {TEXT_MUTED}; padding: 0 6px; }}"
+            f"QPushButton:hover {{ color: {TEXT}; }}"
+        )
+        back_btn.clicked.connect(self.closed)
+
+        self._title_lbl = QLabel()
+        self._title_lbl.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {TEXT_FAINT}; background: transparent;"
+        )
+
+        header = QWidget()
+        header.setFixedHeight(44)
+        header.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        header.setStyleSheet(
+            f"QWidget {{ background: {window_bg()}; border-bottom: 1px solid {BORDER_SOFT}; }}"
+        )
+        hr = QHBoxLayout(header)
+        hr.setContentsMargins(14, 0, 14, 0)
+        hr.setSpacing(10)
+        hr.addWidget(back_btn)
+        hr.addWidget(self._title_lbl, 1)
+
+        # ── Browser ───────────────────────────────────────────────────────────
+        self._browser = QTextBrowser()
+        self._browser.setOpenExternalLinks(True)
+        self._browser.setStyleSheet(
+            f"QTextBrowser {{ background: {panel_bg()}; border: none; }}"
+        )
+        self._browser.document().setDocumentMargin(24)
+
+        # ── Layout ────────────────────────────────────────────────────────────
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(header)
+        layout.addWidget(self._browser, 1)
+        self.setLayout(layout)
+
+    def load(self, path: Path) -> None:
+        self._title_lbl.setText(path.name)
+        try:
+            content = path.read_text(encoding="utf-8")
+            self._browser.setHtml(_md_to_html(content))
+        except Exception:
+            self._browser.setPlainText(f"Could not read: {path}")
 
 
 class MainWindow(QMainWindow):
@@ -51,19 +124,28 @@ class MainWindow(QMainWindow):
             f"QSplitter::handle {{ background: {border_soft()}; }}"
         )
 
-        # Main content area (record bar + panels)
-        main_area = QWidget()
-        main_area.setStyleSheet(f"background: {window_bg()};")
-        ma_layout = QVBoxLayout(main_area)
-        ma_layout.setContentsMargins(0, 0, 0, 0)
-        ma_layout.setSpacing(0)
-        ma_layout.addWidget(self.record_bar)
-        ma_layout.addWidget(panels_splitter, 1)
+        # Recording area (record bar + panels)
+        recording_area = QWidget()
+        recording_area.setStyleSheet(f"background: {window_bg()};")
+        ra_layout = QVBoxLayout(recording_area)
+        ra_layout.setContentsMargins(0, 0, 0, 0)
+        ra_layout.setSpacing(0)
+        ra_layout.addWidget(self.record_bar)
+        ra_layout.addWidget(panels_splitter, 1)
 
-        # Top splitter (sidebar | main area)
+        # Note preview (replaces recording area when a vault note is opened)
+        self.note_preview = NotePreviewWidget()
+        self.note_preview.closed.connect(self.hide_note_preview)
+
+        # Stacked content: 0 = recording, 1 = note preview
+        self._content_stack = QStackedWidget()
+        self._content_stack.addWidget(recording_area)
+        self._content_stack.addWidget(self.note_preview)
+
+        # Top splitter (sidebar | content stack)
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
         top_splitter.addWidget(self.sidebar)
-        top_splitter.addWidget(main_area)
+        top_splitter.addWidget(self._content_stack)
         top_splitter.setSizes([248, 972])
         top_splitter.setCollapsible(0, False)
         top_splitter.setCollapsible(1, False)
@@ -89,6 +171,17 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._build_menu()
+
+    # ── Note preview ──────────────────────────────────────────────────────────
+
+    def show_note_preview(self, path: Path) -> None:
+        self.note_preview.load(path)
+        self._content_stack.setCurrentIndex(1)
+
+    def hide_note_preview(self) -> None:
+        self._content_stack.setCurrentIndex(0)
+
+    # ── Menu ──────────────────────────────────────────────────────────────────
 
     def _build_menu(self) -> None:
         mb = self.menuBar()
@@ -136,7 +229,5 @@ class MainWindow(QMainWindow):
         help_menu.addAction(self.open_log_action)
 
     def update_course_header(self, course: dict, session_num: int) -> None:
-        """Update the window title; the in-window header lives in RecordBarWidget."""
-        name = course.get("name", "")
-        folder = course.get("folder", "")
-        self.setWindowTitle(f"Echos — {name}" if name else "Echos")
+        """Keep window title minimal — topic shown in the record bar header."""
+        self.setWindowTitle("Echos")

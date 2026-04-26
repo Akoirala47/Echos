@@ -80,6 +80,7 @@ class AppController:
         w.sidebar.courses_reordered.connect(self._on_courses_reordered)
         w.sidebar.settings_clicked.connect(self._on_settings)
         w.sidebar.vault_folder_selected.connect(self._on_vault_folder_selected)
+        w.sidebar.note_selected.connect(self._on_note_selected)
 
         # Record bar — primary cycles Start/Pause/Resume; no Stop button
         w.record_bar.record_clicked.connect(self._on_record_clicked)
@@ -287,6 +288,10 @@ class AppController:
         if self._current_course:
             self._current_course = dict(self._current_course)
             self._current_course["folder"] = rel_path
+
+    def _on_note_selected(self, path_str: str) -> None:
+        """User clicked a .md file in the vault tree — open preview."""
+        self._window.show_note_preview(Path(path_str))
 
     def _start_recording(self) -> None:
         if not self._model_manager.is_loaded():
