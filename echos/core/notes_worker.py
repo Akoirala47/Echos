@@ -4,7 +4,7 @@ import logging
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from echos.utils.markdown import build_prompt
+from echos.utils.markdown import build_prompt, build_system_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -55,14 +55,16 @@ class NotesWorker(QThread):
             import google.generativeai as genai
 
             genai.configure(api_key=self._api_key)
-            model = genai.GenerativeModel(self._model_id)
+            model = genai.GenerativeModel(
+                self._model_id,
+                system_instruction=build_system_instruction(self._custom_instruction),
+            )
 
             prompt = build_prompt(
                 self._course_name,
                 self._lecture_num,
                 self._date,
                 self._transcript,
-                self._custom_instruction,
             )
 
             response = model.generate_content(

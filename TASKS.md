@@ -253,6 +253,27 @@
 
 ---
 
+---
+
+## Phase 17 — UI Overhaul (mockup → production)
+
+> Recreate the `ui-mockup/site/` design exactly. Warm parchment palette, new record-bar UX
+> (Start/Pause/Resume — never Stop), End Session confirmation, vault-tree sidebar, status-bar
+> action buttons. Implement in order; each task is a self-contained file change.
+
+- [x] **T-051** `echos/utils/theme.py` — replace grey palette with warm parchment colours; add `window_bg`, `panel_bg`, `statusbar_bg`, `border`, `border_soft`, `accent`, `recording_color`, `paused_color`, `ready_color`, `text`, `text_muted`, `text_faint` helpers for both light and dark modes.
+- [x] **T-052** `echos/main.py` — apply global QSS baseline (font: Inter/-apple-system, base background) on QApplication after palette is set.
+- [x] **T-053** `echos/ui/record_bar.py` — complete redesign: two-row layout (header row: colour dot + topic name + breadcrumb + Session N input; control row: PrimaryButton + status pill + waveform + timer). PrimaryButton cycles Start→Pause→Resume; never shows Stop. Add `end_session_clicked` signal for status bar.
+- [x] **T-054** `echos/ui/widgets/waveform.py` — increase bar count to 36, use accent color from theme, keep staggered animation.
+- [x] **T-055** `echos/ui/status_bar.py` — add `end_session_clicked` + `new_session_clicked` signals; show End Session pill during recording/paused; show New Session + Save + Open buttons per state; warm background colour.
+- [x] **T-056** `echos/ui/sidebar.py` — full redesign: vault-name header; collapsible VAULT section with live disk tree (VaultTreeWidget); collapsible TOPICS section (existing courses as coloured shortcuts); "Rec here" hover pill on vault folders; collapsible section chevrons; warm background.
+- [x] **T-057** `echos/app.py` — wire new signals: `end_session_clicked` → confirm dialog → `_stop_recording`; `new_session_clicked` → `_on_new_recording`; `vault_folder_selected` → update save target; update title-bar format to "Echos — {topic} — {path}"; state labels updated.
+- [x] **T-058** `echos/ui/main_window.py` — remove standalone course-header bar (it is now part of record bar); update `update_course_header` to set window title only; remove layout references to deleted widget.
+- [x] **T-059** `echos/ui/transcript_panel.py` — new panel-header style (10 px uppercase label + ghost mini-buttons, `--border-soft` divider); warm panel background; placeholder text updated.
+- [x] **T-060** `echos/ui/notes_panel.py` — new panel-header style matching transcript panel; footer row with Generate/Regenerate + model-name chip; warm background; `_md_to_html` uses updated theme colours.
+
+---
+
 ## Dependency Graph (critical path)
 
 ```
@@ -271,3 +292,35 @@ T-028 → T-031 → T-032 → T-033 → T-034
 
 Tests (T-036–T-041) can be written in parallel with their corresponding implementation tasks.
 Polish tasks (T-042–T-050) can begin once T-028 is complete.
+
+---
+
+## Phase 18 — Addendum Tasks (from ui-mockup/TASKS_ADDENDUM.md)
+
+### Phase 18A — Recording Controls (confirm implementation)
+
+- [x] **T-A51** `echos/app.py` — `_on_record_clicked` handles IDLE→REC + PAUSED→REC only; separate `_on_end_session_requested` with confirm dialog.
+- [x] **T-A52** `echos/ui/record_bar.py` — primary button: Start/Pause/Resume, never Stop.
+- [x] **T-A53** `echos/ui/status_bar.py` — End Session ghost button (visible in RECORDING/PAUSED).
+- [x] **T-A54** `echos/ui/main_window.py` — `File → End Session (⌘⇧E)` menu item wired to controller.
+- [x] **T-A55** New Session resets panels and flips state to IDLE.
+- [x] **T-A56** Keyboard: `⌘R`=Start/Resume, `⌘P`=Pause, `⌘⇧E`=End Session.
+- [ ] **T-A57** `tests/test_app_state_machine.py` — state machine tests.
+
+### Phase 18B — Vault Tree Sidebar
+
+- [x] **T-B58** `echos/core/vault_watcher.py` — VaultWatcher (QFileSystemWatcher) keeping tree in sync.
+- [x] **T-B59** `echos/ui/widgets/vault_tree.py` — VaultTreeWidget with hover "Record here" pill.
+- [x] **T-B60** `echos/ui/sidebar.py` — split layout: VAULT tree + TOPICS, collapsible.
+- [ ] **T-B61** Path picker in AddTopicDialog using the vault tree.
+- [ ] **T-B62** Migration shim: `folder` accepts multi-segment paths; bump config version to 1.1.
+- [ ] **T-B63** Breadcrumb segments in course header are clickable (scroll tree).
+- [ ] **T-B64** `next_lecture_num` unit test for nested paths.
+- [ ] **T-B65** `tests/test_vault_watcher.py`.
+- [ ] **T-B66** Empty-state messages in vault tree when no vault set / vault empty.
+
+### Phase 18C — Design System
+
+- [x] **T-C67** Light-only theme (`echos/utils/theme.py`) — exact mockup CSS var values.
+- [x] **T-C68** Fusion Qt style + warm QPalette applied at startup.
+- [x] **T-C69** All UI files use hardcoded light values; no `is_dark_mode()` branching.
