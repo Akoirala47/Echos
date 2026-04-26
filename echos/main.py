@@ -100,6 +100,200 @@ def main() -> None:
     app.setOrganizationName("Echos")
     app.setAttribute(Qt.ApplicationAttribute.AA_DontShowIconsInMenus, False)
 
+    # Use Fusion style so Qt renders every widget using QPalette, not native Cocoa.
+    # This gives us full control over the warm parchment look from the mockup.
+    from PyQt6.QtWidgets import QStyleFactory
+    app.setStyle(QStyleFactory.create("Fusion"))
+
+    from PyQt6.QtGui import QColor, QPalette
+    from echos.utils.theme import (
+        WINDOW_BG, PANEL_BG, SIDEBAR_BG, BORDER, BORDER_SOFT,
+        TEXT, TEXT_MUTED, TEXT_FAINT, ACCENT, SELECTED_STRONG,
+    )
+
+    pal = QPalette()
+    _c = QColor  # shorthand
+
+    # Active group (focused window)
+    pal.setColor(QPalette.ColorRole.Window,           _c(WINDOW_BG))
+    pal.setColor(QPalette.ColorRole.WindowText,       _c(TEXT))
+    pal.setColor(QPalette.ColorRole.Base,             _c(PANEL_BG))
+    pal.setColor(QPalette.ColorRole.AlternateBase,    _c("#f6f4ef"))
+    pal.setColor(QPalette.ColorRole.Text,             _c(TEXT))
+    pal.setColor(QPalette.ColorRole.Button,           _c(SIDEBAR_BG))
+    pal.setColor(QPalette.ColorRole.ButtonText,       _c(TEXT))
+    pal.setColor(QPalette.ColorRole.BrightText,       _c("#ffffff"))
+    pal.setColor(QPalette.ColorRole.Highlight,        _c("#e8c0ab"))   # soft amber selection
+    pal.setColor(QPalette.ColorRole.HighlightedText,  _c(TEXT))
+    pal.setColor(QPalette.ColorRole.PlaceholderText,  _c(TEXT_FAINT))
+    pal.setColor(QPalette.ColorRole.ToolTipBase,      _c("#fffae8"))
+    pal.setColor(QPalette.ColorRole.ToolTipText,      _c(TEXT))
+    pal.setColor(QPalette.ColorRole.Link,             _c(ACCENT))
+    pal.setColor(QPalette.ColorRole.Mid,              _c(BORDER))
+    pal.setColor(QPalette.ColorRole.Midlight,         _c(BORDER_SOFT))
+    pal.setColor(QPalette.ColorRole.Light,            _c("#f8f6f2"))
+    pal.setColor(QPalette.ColorRole.Dark,             _c("#ccc9bc"))
+    pal.setColor(QPalette.ColorRole.Shadow,           _c("#b0ae9e"))
+
+    # Inactive group (unfocused window) — keep same so nothing goes grey
+    for role in [
+        QPalette.ColorRole.Window, QPalette.ColorRole.WindowText,
+        QPalette.ColorRole.Base, QPalette.ColorRole.Text,
+        QPalette.ColorRole.Button, QPalette.ColorRole.ButtonText,
+        QPalette.ColorRole.Highlight, QPalette.ColorRole.HighlightedText,
+    ]:
+        pal.setColor(QPalette.ColorGroup.Inactive, role,
+                     pal.color(QPalette.ColorGroup.Active, role))
+
+    # Disabled group — faded but still warm
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText,  _c(TEXT_FAINT))
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text,        _c(TEXT_FAINT))
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText,  _c(TEXT_FAINT))
+    pal.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Button,      _c("#e8e6de"))
+
+    app.setPalette(pal)
+
+    app.setStyleSheet(f"""
+        * {{
+            font-family: -apple-system, 'Inter', 'Helvetica Neue', sans-serif;
+        }}
+        QMainWindow, QDialog {{
+            background: {WINDOW_BG};
+        }}
+        QTextEdit, QTextBrowser {{
+            background: {PANEL_BG};
+            color: {TEXT};
+            border: none;
+            selection-background-color: rgba(194,65,12,0.25);
+        }}
+        QLineEdit {{
+            background: {PANEL_BG};
+            color: {TEXT};
+            border: 1px solid {BORDER_SOFT};
+            border-radius: 5px;
+            padding: 4px 8px;
+            selection-background-color: rgba(194,65,12,0.25);
+        }}
+        QLineEdit:focus {{
+            border-color: {ACCENT};
+        }}
+        QSpinBox {{
+            background: {PANEL_BG};
+            color: {TEXT};
+            border: 1px solid {BORDER_SOFT};
+            border-radius: 4px;
+            padding: 2px 6px;
+        }}
+        QComboBox {{
+            background: {SIDEBAR_BG};
+            color: {TEXT};
+            border: 1px solid {BORDER_SOFT};
+            border-radius: 5px;
+            padding: 4px 8px;
+        }}
+        QMenuBar {{
+            background: {WINDOW_BG};
+            color: {TEXT};
+            border-bottom: 1px solid {BORDER_SOFT};
+        }}
+        QMenuBar::item:selected {{
+            background: rgba(194,65,12,0.10);
+        }}
+        QMenu {{
+            background: {WINDOW_BG};
+            color: {TEXT};
+            border: 1px solid {BORDER};
+            border-radius: 8px;
+        }}
+        QMenu::item:selected {{
+            background: rgba(194,65,12,0.10);
+        }}
+        QScrollBar:vertical {{
+            width: 8px; background: transparent; margin: 0; border: none;
+        }}
+        QScrollBar::handle:vertical {{
+            background: rgba(0,0,0,0.12); border-radius: 4px; min-height: 30px;
+        }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
+        QScrollBar:horizontal {{
+            height: 8px; background: transparent; margin: 0; border: none;
+        }}
+        QScrollBar::handle:horizontal {{
+            background: rgba(0,0,0,0.12); border-radius: 4px; min-width: 30px;
+        }}
+        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; border: none; }}
+        QSplitter::handle {{
+            background: {BORDER_SOFT};
+        }}
+        QTabBar::tab {{
+            background: {SIDEBAR_BG};
+            color: {TEXT_MUTED};
+            border: 1px solid {BORDER_SOFT};
+            padding: 6px 14px;
+        }}
+        QTabBar::tab:selected {{
+            background: {PANEL_BG};
+            color: {TEXT};
+            border-bottom: none;
+        }}
+        QTabWidget::pane {{
+            border: 1px solid {BORDER_SOFT};
+            background: {PANEL_BG};
+        }}
+        QToolTip {{
+            background: #fffae8;
+            color: {TEXT};
+            border: 1px solid {BORDER};
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+        }}
+        QCheckBox {{
+            color: {TEXT};
+            spacing: 6px;
+        }}
+        QRadioButton {{
+            color: {TEXT};
+            spacing: 6px;
+        }}
+        QGroupBox {{
+            color: {TEXT_MUTED};
+            border: 1px solid {BORDER_SOFT};
+            border-radius: 6px;
+            margin-top: 8px;
+            padding-top: 8px;
+            font-size: 11px;
+            font-weight: 600;
+        }}
+        QSlider::groove:horizontal {{
+            height: 4px;
+            background: {BORDER_SOFT};
+            border-radius: 2px;
+        }}
+        QSlider::handle:horizontal {{
+            width: 14px; height: 14px;
+            background: {ACCENT};
+            border-radius: 7px;
+            margin: -5px 0;
+        }}
+        QSlider::sub-page:horizontal {{
+            background: {ACCENT};
+            border-radius: 2px;
+        }}
+        QProgressBar {{
+            background: {BORDER_SOFT};
+            border: none;
+            border-radius: 4px;
+            height: 6px;
+            text-align: center;
+            color: transparent;
+        }}
+        QProgressBar::chunk {{
+            background: {ACCENT};
+            border-radius: 4px;
+        }}
+    """)
+
     from echos.config.config_manager import ConfigManager
     from echos.core.model_manager import ModelManager
     from echos.core.obsidian_manager import ObsidianManager

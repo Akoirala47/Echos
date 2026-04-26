@@ -366,3 +366,38 @@ is_first_launch() -> bool
 - `NSMicrophoneUsageDescription` plist key required for mic access
 - Network entitlement (`com.apple.security.network.client`) required for Google API calls only
 
+
+---
+
+## 8. Addendum — April 2026
+
+> Imported from `ui-mockup/SPEC_ADDENDUM.md`.
+
+### 8A. Recording Controls — Separate Pause from End Session
+
+The recording state machine:
+
+```
+IDLE ──Start──▶ RECORDING ◀──Resume── PAUSED
+                    │   ─────Pause────▶
+                    └────End Session──▶ STOPPED  (terminal for that session)
+```
+
+- Primary button cycles: **Start Recording → Pause → Resume** (never Stop).
+- **End Session** is a separate ghost button in the status bar (right side) + `File → End Session` (`⌘⇧E`). Requires confirm dialog.
+- Keyboard: `⌘R` = Start (IDLE) or Resume (PAUSED); `⌘P` = Pause (RECORDING); `⌘⇧E` = End Session.
+- After End Session: status bar shows "Session complete" with Generate Notes + Start New Session actions.
+
+### 8B. Sidebar — Vault Tree
+
+The sidebar becomes a two-section panel:
+- **VAULT** (top, collapsible): live mirror of the Obsidian vault on disk. Folders with chevrons; `.md` leaves without. Hover on folder shows "● Record here" pill. Right-click: New Subfolder / Rename / Reveal in Finder.
+- **TOPICS** (bottom, collapsible): named bookmarks pointing at vault-relative folder paths. Selecting a topic expands the tree to that folder.
+- Sections resizable with a drag handle.
+- `VaultWatcher` (QFileSystemWatcher) keeps the tree in sync with disk changes.
+
+### 8C. Design System — Light Mode Only
+
+- Warm parchment palette, no dark-mode branching.
+- All colours hardcoded from the mockup CSS variables (see `echos/utils/theme.py`).
+- Fusion Qt style + custom QPalette so every native widget matches.

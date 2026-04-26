@@ -1,9 +1,14 @@
+"""Sidebar — vault tree + topics, matching the UI mockup exactly."""
+
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
-from PyQt6.QtCore import QPoint, QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter
+from PyQt6.QtCore import QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtGui import (
+    QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
@@ -12,123 +17,319 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
-    QStyle,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from echos.core.vault_watcher import VaultWatcher
+from echos.utils.theme import (
+    ACCENT, BORDER, BORDER_SOFT, SELECTED_STRONG, SIDEBAR_BG,
+    TEXT, TEXT_FAINT, TEXT_MUTED,
+)
+
 _PRESET_COLORS = [
-    "#2980B9", "#27AE60", "#E74C3C", "#F39C12",
-    "#8E44AD", "#16A085", "#D35400", "#7F8C8D",
+    "#c2410c", "#be185d", "#1c8b4a", "#1d4ed8",
+    "#7c3aed", "#0369a1", "#76746b", "#92400e",
 ]
 
-_ITEM_HEIGHT = 36
-_DOT_RADIUS = 5
+# ── Icon helpers ──────────────────────────────────────────────────────────────
+
+def _folder_icon(size: int = 16, fill: str = "#d1cfc4", stroke: str = "#a8a69a") -> QIcon:
+    """Paint a folder shape matching the mockup SVG."""
+    px = QPixmap(size, size)
+    px.fill(Qt.GlobalColor.transparent)
+    p = QPainter(px)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    s = size / 14.0
+    path = QPainterPath()
+    # Closed folder outline from mockup SVG
+    path.moveTo(1.5*s, 3*s)
+    path.quadTo(1.5*s, 2*s, 2.5*s, 2*s)
+    path.lineTo(5*s,  2*s)
+    path.lineTo(6*s,  3*s)
+    path.lineTo(11*s, 3*s)
+    path.quadTo(12*s, 3*s, 12*s, 4*s)
+    path.lineTo(12*s, 11*s)
+    path.quadTo(12*s, 12*s, 11*s, 12*s)
+    path.lineTo(2.5*s, 12*s)
+    path.quadTo(1.5*s, 12*s, 1.5*s, 11*s)
+    path.closeSubpath()
+
+    p.fillPath(path, QColor(fill))
+    pen = QPen(QColor(stroke))
+    pen.setWidthF(0.9 * s)
+    p.setPen(pen)
+    p.drawPath(path)
+    p.end()
+    return QIcon(px)
 
 
-# ---------------------------------------------------------------------------
-# Custom delegate — draws colour dot + course name
-# ---------------------------------------------------------------------------
+def _note_icon(size: int = 14, color: str = "#76746b") -> QIcon:
+    """Paint a document icon matching the mockup SVG."""
+    px = QPixmap(size, size)
+    px.fill(Qt.GlobalColor.transparent)
+    p = QPainter(px)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setOpacity(0.7)
 
-class _CourseDelegate(QStyledItemDelegate):
-    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
-        painter.save()
+    s = size / 12.0
+    pen = QPen(QColor(color))
+    pen.setWidthF(0.85 * s)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
 
-        # Selection background
-        if option.state & QStyle.StateFlag.State_Selected:
-            painter.fillRect(option.rect, option.palette.highlight())
+    # Document body
+    body = QPainterPath()
+    body.moveTo(3*s,   1.5*s)
+    body.lineTo(8*s,   1.5*s)
+    body.lineTo(10*s,  3.5*s)
+    body.lineTo(10*s,  10*s)
+    body.quadTo(10*s,  10.5*s, 9.5*s, 10.5*s)
+    body.lineTo(3*s,   10.5*s)
+    body.quadTo(2.5*s, 10.5*s, 2.5*s, 10*s)
+    body.lineTo(2.5*s, 2*s)
+    body.quadTo(2.5*s, 1.5*s, 3*s, 1.5*s)
+    body.closeSubpath()
+    p.drawPath(body)
 
-        course: dict = index.data(Qt.ItemDataRole.UserRole) or {}
-        color = QColor(course.get("color", _PRESET_COLORS[0]))
-        name = course.get("name", "")
+    # Folded corner
+    corner = QPainterPath()
+    corner.moveTo(8*s, 1.5*s)
+    corner.lineTo(8*s, 3.5*s)
+    corner.lineTo(10*s, 3.5*s)
+    p.drawPath(corner)
 
-        # Color dot
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(color)
-        painter.setPen(Qt.PenStyle.NoPen)
-        cx = option.rect.left() + 14
-        cy = option.rect.center().y()
-        painter.drawEllipse(cx - _DOT_RADIUS, cy - _DOT_RADIUS, _DOT_RADIUS * 2, _DOT_RADIUS * 2)
-
-        # Course name
-        text_rect = option.rect.adjusted(28, 0, -8, 0)
-        if option.state & QStyle.StateFlag.State_Selected:
-            painter.setPen(option.palette.highlightedText().color())
-        else:
-            painter.setPen(option.palette.text().color())
-        font = painter.font()
-        font.setPointSize(13)
-        painter.setFont(font)
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, name)
-
-        painter.restore()
-
-    def sizeHint(self, option: QStyleOptionViewItem, index) -> QSize:
-        return QSize(180, _ITEM_HEIGHT)
+    # Text lines
+    from PyQt6.QtCore import QLineF
+    p.drawLine(QLineF(4*s, 6*s,   8*s, 6*s))
+    p.drawLine(QLineF(4*s, 7.6*s, 8*s, 7.6*s))
+    p.drawLine(QLineF(4*s, 9.2*s, 6.5*s, 9.2*s))
+    p.end()
+    return QIcon(px)
 
 
-# ---------------------------------------------------------------------------
-# Add Course dialog
-# ---------------------------------------------------------------------------
+_ICON_FOLDER      = None
+_ICON_FOLDER_WARM = None
+_ICON_NOTE        = None
 
-class _ColorSwatch(QPushButton):
-    def __init__(self, color: str, parent=None) -> None:
+
+def _get_folder_icon(warm: bool = False) -> QIcon:
+    global _ICON_FOLDER, _ICON_FOLDER_WARM
+    if warm:
+        if _ICON_FOLDER_WARM is None:
+            _ICON_FOLDER_WARM = _folder_icon(fill="#ddb18d", stroke="#c49870")
+        return _ICON_FOLDER_WARM
+    if _ICON_FOLDER is None:
+        _ICON_FOLDER = _folder_icon()
+    return _ICON_FOLDER
+
+
+def _get_note_icon() -> QIcon:
+    global _ICON_NOTE
+    if _ICON_NOTE is None:
+        _ICON_NOTE = _note_icon()
+    return _ICON_NOTE
+
+
+# ── Collapsible section header ────────────────────────────────────────────────
+
+class _SectionHeader(QWidget):
+    toggled = pyqtSignal(bool)  # True = expanded
+
+    def __init__(self, label: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._color = color
-        self.setFixedSize(24, 24)
-        self._set_selected(False)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._expanded = True
 
-    def _set_selected(self, selected: bool) -> None:
-        border = "#333" if selected else "transparent"
-        self.setStyleSheet(
-            f"background-color: {self._color};"
-            f"border-radius: 12px;"
-            f"border: 2px solid {border};"
+        self._chev = QLabel("▾")
+        self._chev.setStyleSheet(f"font-size: 9px; color: {TEXT_FAINT}; min-width: 10px;")
+
+        self._lbl = QLabel(label.upper())
+        self._lbl.setStyleSheet(
+            f"font-size: 10px; font-weight: 700; letter-spacing: 0.8px; color: {TEXT_FAINT};"
         )
 
-    @property
-    def color(self) -> str:
-        return self._color
+        row = QHBoxLayout(self)
+        row.setContentsMargins(12, 9, 8, 4)
+        row.setSpacing(5)
+        row.addWidget(self._chev)
+        row.addWidget(self._lbl)
+        row.addStretch()
+        self.setLayout(row)
+        self.setFixedHeight(28)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def add_right_widget(self, w: QWidget) -> None:
+        self.layout().addWidget(w)
+
+    def mousePressEvent(self, _event) -> None:
+        self._expanded = not self._expanded
+        self._chev.setText("▾" if self._expanded else "▸")
+        self.toggled.emit(self._expanded)
 
 
-class AddCourseDialog(QDialog):
-    def __init__(self, parent=None) -> None:
+# ── Vault tree ────────────────────────────────────────────────────────────────
+
+class _VaultTree(QTreeWidget):
+    folder_selected = pyqtSignal(str)
+    record_here     = pyqtSignal(str)
+
+    _MAX_DEPTH = 5
+
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Add Course")
+        self._vault_root: Path | None = None
+
+        self.setHeaderHidden(True)
+        self.setIndentation(16)
+        self.setAnimated(True)
+        self.setFrameShape(QTreeWidget.Shape.NoFrame)
+        self.setIconSize(QSize(14, 14))
+        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setUniformRowHeights(True)
+        self.setStyleSheet(f"""
+            QTreeWidget {{
+                background: transparent;
+                color: {TEXT};
+                font-size: 12.5px;
+                outline: 0;
+                border: none;
+                show-decoration-selected: 1;
+            }}
+            QTreeWidget::item {{
+                height: 24px;
+                padding-left: 2px;
+                border-radius: 4px;
+            }}
+            QTreeWidget::item:selected {{
+                background: {SELECTED_STRONG};
+                color: {TEXT};
+            }}
+            QTreeWidget::item:hover:!selected {{
+                background: rgba(0,0,0,0.04);
+            }}
+            QTreeWidget::branch {{
+                background: transparent;
+            }}
+            QTreeWidget::branch:has-children:!has-siblings:closed,
+            QTreeWidget::branch:closed:has-children:has-siblings {{
+                image: none;
+            }}
+            QTreeWidget::branch:open:has-children:!has-siblings,
+            QTreeWidget::branch:open:has-children:has-siblings {{
+                image: none;
+            }}
+        """)
+        self.itemClicked.connect(self._on_item_clicked)
+
+    def load_vault(self, vault_path: str) -> None:
+        self.clear()
+        root = Path(vault_path)
+        if not root.is_dir():
+            return
+        self._vault_root = root
+        self._populate(None, root, 0)
+
+    def _populate(self, parent: QTreeWidgetItem | None, path: Path, depth: int) -> None:
+        if depth > self._MAX_DEPTH:
+            return
+        try:
+            entries = sorted(
+                path.iterdir(),
+                key=lambda e: (e.is_file(), e.name.lower()),
+            )
+        except PermissionError:
+            return
+
+        for entry in entries:
+            if entry.name.startswith(".") or entry.name in (".obsidian", "__pycache__"):
+                continue
+            if entry.is_dir():
+                item = QTreeWidgetItem([entry.name])
+                item.setIcon(0, _get_folder_icon(warm=False))
+                item.setData(0, Qt.ItemDataRole.UserRole, {"kind": "folder", "path": entry})
+                item.setForeground(0, QColor(TEXT))
+                if parent is None:
+                    self.addTopLevelItem(item)
+                else:
+                    parent.addChild(item)
+                self._populate(item, entry, depth + 1)
+            elif entry.suffix.lower() == ".md":
+                item = QTreeWidgetItem([entry.stem])
+                item.setIcon(0, _get_note_icon())
+                item.setData(0, Qt.ItemDataRole.UserRole, {"kind": "note", "path": entry})
+                item.setForeground(0, QColor(TEXT_MUTED))
+                if parent is None:
+                    self.addTopLevelItem(item)
+                else:
+                    parent.addChild(item)
+
+    def _on_item_clicked(self, item: QTreeWidgetItem, _col: int) -> None:
+        data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        if data.get("kind") == "folder" and self._vault_root:
+            rel = str(data["path"].relative_to(self._vault_root))
+            self.folder_selected.emit(rel)
+
+
+# ── Color swatch ──────────────────────────────────────────────────────────────
+
+class _ColorSwatch(QWidget):
+    clicked = pyqtSignal()
+
+    def __init__(self, color: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._color = color
+        self._selected = False
+        self.setFixedSize(18, 18)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def _set_selected(self, v: bool) -> None:
+        self._selected = v
+        self.update()
+
+    def mousePressEvent(self, _event) -> None:
+        self.clicked.emit()
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setBrush(QColor(self._color))
+        p.setPen(QPen(QColor(TEXT), 1.5) if self._selected else Qt.PenStyle.NoPen)
+        p.drawEllipse(1, 1, 16, 16)
+        p.end()
+
+
+# ── Add Topic dialog ──────────────────────────────────────────────────────────
+
+class AddTopicDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Add Topic")
         self.setFixedWidth(340)
 
         self._name_edit = QLineEdit()
-        self._name_edit.setPlaceholderText("e.g. CS446")
+        self._name_edit.setPlaceholderText("e.g. CS446, Work Meetings, Research")
         self._name_edit.textChanged.connect(self._on_name_changed)
 
         self._folder_edit = QLineEdit()
-        self._folder_edit.setPlaceholderText("e.g. CS446")
+        self._folder_edit.setPlaceholderText("e.g. School/CS446/Lectures")
 
         self._selected_color = _PRESET_COLORS[0]
-        swatches_layout = QHBoxLayout()
+        swatches = QHBoxLayout()
+        swatches.setSpacing(6)
         self._swatches: list[_ColorSwatch] = []
         for c in _PRESET_COLORS:
             sw = _ColorSwatch(c)
-            sw.clicked.connect(lambda _, sw=sw: self._select_color(sw))
-            swatches_layout.addWidget(sw)
-        self._swatches = [_ColorSwatch(c) for c in _PRESET_COLORS]
-        # Rebuild with proper references
-        for i in reversed(range(swatches_layout.count())):
-            swatches_layout.itemAt(i).widget().deleteLater()
-        self._swatches = []
-        for c in _PRESET_COLORS:
-            sw = _ColorSwatch(c)
-            sw.clicked.connect(self._make_swatch_handler(sw))
-            swatches_layout.addWidget(sw)
+            sw.clicked.connect(self._make_handler(sw))
+            swatches.addWidget(sw)
             self._swatches.append(sw)
         self._swatches[0]._set_selected(True)
 
@@ -139,31 +340,27 @@ class AddCourseDialog(QDialog):
         buttons.rejected.connect(self.reject)
 
         form = QFormLayout()
-        form.addRow("Course name:", self._name_edit)
+        form.addRow("Name:", self._name_edit)
         form.addRow("Vault folder:", self._folder_edit)
-        form.addRow("Color:", swatches_layout)
+        form.addRow("Color:", swatches)
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(buttons)
-        self.setLayout(layout)
 
-    def _make_swatch_handler(self, sw: _ColorSwatch):
-        def handler():
-            self._select_color(sw)
-        return handler
+    def _make_handler(self, sw: _ColorSwatch):
+        def _h():
+            for s in self._swatches:
+                s._set_selected(False)
+            sw._set_selected(True)
+            self._selected_color = sw._color
+        return _h
 
-    def _select_color(self, chosen: _ColorSwatch) -> None:
-        for sw in self._swatches:
-            sw._set_selected(sw is chosen)
-        self._selected_color = chosen.color
+    def _on_name_changed(self, name: str) -> None:
+        if not self._folder_edit.text():
+            self._folder_edit.setText(name.strip().replace(" ", "-"))
 
-    def _on_name_changed(self, text: str) -> None:
-        # Auto-fill folder from name if folder is empty or was previously auto-filled.
-        safe = "".join(c for c in text if c.isalnum() or c in "-_ ").strip()
-        self._folder_edit.setText(safe)
-
-    def get_course(self) -> dict:
+    def get_topic(self) -> dict:
         return {
             "id": str(uuid.uuid4()),
             "name": self._name_edit.text().strip(),
@@ -172,165 +369,326 @@ class AddCourseDialog(QDialog):
         }
 
 
-# ---------------------------------------------------------------------------
-# SidebarWidget
-# ---------------------------------------------------------------------------
+# ── Topic row ─────────────────────────────────────────────────────────────────
 
-class _DroppableList(QListWidget):
-    """QListWidget that emits a signal after an internal drag-drop reorder."""
+class _TopicRow(QWidget):
+    clicked = pyqtSignal()
 
-    order_changed = pyqtSignal()
+    # Selection fill: rgba(194,65,12, 0.18)
+    _SEL_COLOR   = QColor(194, 65, 12, 46)
+    # Hover fill: rgba(0,0,0, 0.04)
+    _HOVER_COLOR = QColor(0, 0, 0, 10)
 
-    def dropEvent(self, event) -> None:
-        super().dropEvent(event)
-        self.order_changed.emit()
+    def __init__(self, topic: dict, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._topic = topic
+        self._selected = False
+        self._hovered  = False
 
+        self.setFixedHeight(32)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        dot = QLabel()
+        dot.setFixedSize(9, 9)
+        dot.setStyleSheet(
+            f"border-radius: 4px; background: {topic.get('color', ACCENT)};"
+        )
+
+        self._name_lbl = QLabel(topic.get("name", ""))
+        self._name_lbl.setStyleSheet(f"font-size: 12.5px; color: {TEXT};")
+
+        folder = topic.get("folder", "")
+        parts = folder.replace("\\", "/").split("/")
+        tail  = " / ".join(parts[-2:]) if len(parts) >= 2 else folder
+        self._path_lbl = QLabel(tail)
+        self._path_lbl.setStyleSheet(f"font-size: 10.5px; color: {TEXT_FAINT};")
+        self._path_lbl.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(12, 0, 12, 0)
+        row.setSpacing(8)
+        row.addWidget(dot, 0, Qt.AlignmentFlag.AlignVCenter)
+        row.addWidget(self._name_lbl, 1)
+        row.addWidget(self._path_lbl, 0)
+        self.setLayout(row)
+
+    def set_selected(self, v: bool) -> None:
+        self._selected = v
+        weight = "600" if v else "400"
+        self._name_lbl.setStyleSheet(
+            f"font-size: 12.5px; font-weight: {weight}; color: {TEXT};"
+        )
+        self.update()
+
+    # ── Events ────────────────────────────────────────────────────────────────
+
+    def mousePressEvent(self, _event) -> None:
+        self.clicked.emit()
+
+    def enterEvent(self, _event) -> None:
+        self._hovered = True
+        self.update()
+
+    def leaveEvent(self, _event) -> None:
+        self._hovered = False
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        """Paint background behind children — avoids QSS cascade issues."""
+        if self._selected or self._hovered:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setBrush(self._SEL_COLOR if self._selected else self._HOVER_COLOR)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(QRectF(self.rect().adjusted(0, 1, 0, -1)), 5, 5)
+            p.end()
+        super().paintEvent(event)
+
+
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 
 class SidebarWidget(QWidget):
-    """Left sidebar: course list with add/delete/reorder + Settings button.
+    """Left sidebar: vault tree + topics."""
 
-    Signals
-    -------
-    course_selected : dict
-        Emitted when the user clicks a course.
-    course_added : dict
-        Emitted when a new course is confirmed in the dialog.
-    course_deleted : str
-        Emitted with the course id when a course is deleted.
-    courses_reordered : list[dict]
-        Emitted with the new ordered list after drag-drop.
-    settings_clicked
-        Emitted when the ⚙ Settings button is pressed.
-    """
-
-    course_selected = pyqtSignal(dict)
-    course_added = pyqtSignal(dict)
-    course_deleted = pyqtSignal(str)
-    courses_reordered = pyqtSignal(list)
-    settings_clicked = pyqtSignal()
+    course_selected      = pyqtSignal(dict)
+    course_added         = pyqtSignal(dict)
+    course_deleted       = pyqtSignal(str)
+    courses_reordered    = pyqtSignal(list)
+    settings_clicked     = pyqtSignal()
+    vault_folder_selected = pyqtSignal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFixedWidth(210)
-        # Let Qt paint the window-role background (adapts to dark/light automatically).
-        self.setAutoFillBackground(True)
-        self.setStyleSheet("border-right: 1px solid palette(mid);")
+        self._courses: list[dict] = []
+        self._active_id: str | None = None
+        self._topic_rows: list[_TopicRow] = []
+        self._vault_path: str = ""
 
-        # Header label
-        header = QLabel("COURSES")
-        header.setStyleSheet(
-            "font-size: 10px; font-weight: 700; letter-spacing: 0.5px;"
-            " color: palette(placeholderText); padding: 12px 12px 4px 12px;"
-            " border: none;"
+        self._watcher = VaultWatcher(self)
+        self._watcher.tree_changed.connect(self._on_vault_changed)
+
+        self.setFixedWidth(248)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(
+            f"SidebarWidget {{ background: {SIDEBAR_BG}; border-right: 1px solid {BORDER}; }}"
+        )
+        self._build_ui()
+
+    # ── Build ─────────────────────────────────────────────────────────────────
+
+    def _build_ui(self) -> None:
+        # ── Vault header ──────────────────────────────────────────────────────
+        vault_icon = QLabel()
+        vault_icon.setFixedSize(14, 14)
+        vault_icon.setPixmap(_folder_icon(14, "#7e6e57", "#5e5040").pixmap(14, 14))
+
+        self._vault_name_lbl = QLabel("No vault")
+        self._vault_name_lbl.setStyleSheet(
+            f"font-size: 12.5px; font-weight: 600; color: {TEXT};"
         )
 
-        # Course list
-        self._list = _DroppableList()
-        self._list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
-        self._list.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self._list.setItemDelegate(_CourseDelegate())
-        self._list.setSpacing(0)
-        self._list.setFrameShape(QListWidget.Shape.NoFrame)
-        self._list.setStyleSheet("background: transparent; outline: 0; border: none;")
-        self._list.currentItemChanged.connect(self._on_selection_changed)
-        self._list.order_changed.connect(self._on_order_changed)
-        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self._list.customContextMenuRequested.connect(self._show_context_menu)
+        self._vault_path_lbl = QLabel("")
+        self._vault_path_lbl.setStyleSheet(f"font-size: 10px; color: {TEXT_FAINT};")
+        self._vault_path_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        _btn_style = (
-            "QPushButton { color: palette(windowText); font-size: 12px; padding: 6px 12px;"
-            " text-align: left; background: transparent; border: none; }"
-            "QPushButton:hover { background: palette(midlight); border-radius: 4px; }"
+        vault_hdr = QWidget()
+        vault_hdr.setFixedHeight(38)
+        vault_hdr.setStyleSheet(
+            f"background: {SIDEBAR_BG}; border-bottom: 1px solid {BORDER_SOFT};"
         )
+        vhr = QHBoxLayout(vault_hdr)
+        vhr.setContentsMargins(12, 0, 12, 0)
+        vhr.setSpacing(7)
+        vhr.addWidget(vault_icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        vhr.addWidget(self._vault_name_lbl, 1)
+        vhr.addWidget(self._vault_path_lbl)
 
-        # Add course button
-        add_btn = QPushButton("+ Add Course")
-        add_btn.setStyleSheet(_btn_style)
-        add_btn.clicked.connect(self._on_add_course)
+        # ── VAULT section ─────────────────────────────────────────────────────
+        vault_sec_hdr = _SectionHeader("Vault")
+        # + and ⟳ buttons
+        for label, tip in [("+ ", "New folder"), ("⟳", "Refresh")]:
+            btn = QPushButton(label)
+            btn.setFixedSize(18, 18)
+            btn.setToolTip(tip)
+            btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; border: none;"
+                f" font-size: 11px; color: {TEXT_MUTED}; padding: 0; }}"
+                f"QPushButton:hover {{ color: {TEXT}; }}"
+            )
+            if label == "⟳":
+                btn.clicked.connect(lambda: self._on_vault_changed())
+            vault_sec_hdr.add_right_widget(btn)
 
-        # Settings button
-        settings_btn = QPushButton("\u2699\ufe0f  Settings")
-        settings_btn.setStyleSheet(_btn_style)
+        self._vault_tree = _VaultTree()
+        self._vault_tree.folder_selected.connect(self.vault_folder_selected)
+        vault_sec_hdr.toggled.connect(self._vault_tree.setVisible)
+
+        vault_section = QWidget()
+        vault_section.setStyleSheet(
+            f"background: {SIDEBAR_BG}; border-bottom: 1px solid {BORDER_SOFT};"
+        )
+        vsl = QVBoxLayout(vault_section)
+        vsl.setContentsMargins(0, 0, 0, 4)
+        vsl.setSpacing(0)
+        vsl.addWidget(vault_sec_hdr)
+        vsl.addWidget(self._vault_tree, 1)
+
+        # ── TOPICS section ────────────────────────────────────────────────────
+        topics_sec_hdr = _SectionHeader("Topics")
+        add_btn = QPushButton("+")
+        add_btn.setFixedSize(18, 18)
+        add_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none;"
+            f" font-size: 14px; font-weight: 500; color: {TEXT_MUTED}; padding: 0; line-height: 1; }}"
+            f"QPushButton:hover {{ color: {TEXT}; }}"
+        )
+        add_btn.clicked.connect(self._on_add_topic)
+        topics_sec_hdr.add_right_widget(add_btn)
+
+        self._topics_container = QWidget()
+        self._topics_container.setStyleSheet(f"background: {SIDEBAR_BG};")
+        self._topics_layout = QVBoxLayout(self._topics_container)
+        self._topics_layout.setContentsMargins(6, 2, 6, 4)
+        self._topics_layout.setSpacing(1)
+        topics_sec_hdr.toggled.connect(self._topics_container.setVisible)
+
+        topics_section = QWidget()
+        topics_section.setStyleSheet(f"background: {SIDEBAR_BG};")
+        tsl = QVBoxLayout(topics_section)
+        tsl.setContentsMargins(0, 0, 0, 0)
+        tsl.setSpacing(0)
+        tsl.addWidget(topics_sec_hdr)
+        tsl.addWidget(self._topics_container)
+
+        # ── Scroll area ───────────────────────────────────────────────────────
+        scroll_content = QWidget()
+        scroll_content.setStyleSheet(f"background: {SIDEBAR_BG};")
+        scl = QVBoxLayout(scroll_content)
+        scl.setContentsMargins(0, 0, 0, 0)
+        scl.setSpacing(0)
+        scl.addWidget(vault_section, 3)
+        scl.addWidget(topics_section, 0)
+        scl.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setWidget(scroll_content)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(f"background: {SIDEBAR_BG}; border: none;")
+
+        # ── Footer ────────────────────────────────────────────────────────────
+        settings_btn = QPushButton("⚙  Settings")
+        settings_btn.setFlat(True)
+        settings_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; text-align: left;"
+            f" font-size: 12px; color: {TEXT_MUTED}; padding: 6px 10px; }}"
+            f"QPushButton:hover {{ color: {TEXT}; }}"
+        )
         settings_btn.clicked.connect(self.settings_clicked)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 4)
-        layout.setSpacing(0)
-        layout.addWidget(header)
-        layout.addWidget(self._list, 1)
-        layout.addWidget(add_btn)
-        layout.addWidget(settings_btn)
-        self.setLayout(layout)
+        footer = QWidget()
+        footer.setFixedHeight(36)
+        footer.setStyleSheet(
+            f"background: {SIDEBAR_BG}; border-top: 1px solid {BORDER_SOFT};"
+        )
+        fl = QHBoxLayout(footer)
+        fl.setContentsMargins(0, 0, 0, 0)
+        fl.addWidget(settings_btn)
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+        # ── Outer layout ──────────────────────────────────────────────────────
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(vault_hdr)
+        outer.addWidget(scroll, 1)
+        outer.addWidget(footer)
+        self.setLayout(outer)
+
+    # ── Public API ─────────────────────────────────────────────────────────────
+
+    def set_vault_path(self, vault_path: str) -> None:
+        if not vault_path:
+            return
+        self._vault_path = vault_path
+        p = Path(vault_path)
+        self._vault_name_lbl.setText(p.name)
+        home = str(Path.home())
+        display = vault_path.replace(home, "~")
+        self._vault_path_lbl.setText(str(Path(display).parent))
+        self._vault_tree.load_vault(vault_path)
+        self._watcher.watch(vault_path)
 
     def load_courses(self, courses: list[dict]) -> None:
-        """Populate the list from a list of course dicts."""
-        self._list.clear()
-        for course in courses:
-            self._add_item(course)
-
-    def add_course(self, course: dict) -> None:
-        self._add_item(course)
+        self._courses = list(courses)
+        self._rebuild_topics()
 
     def current_course(self) -> dict | None:
-        item = self._list.currentItem()
-        if item is None:
-            return None
-        return item.data(Qt.ItemDataRole.UserRole)
+        return next((c for c in self._courses if c["id"] == self._active_id), None)
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
+    # ── Internal ───────────────────────────────────────────────────────────────
 
-    def _add_item(self, course: dict) -> None:
-        item = QListWidgetItem()
-        item.setData(Qt.ItemDataRole.UserRole, course)
-        item.setSizeHint(QSize(180, _ITEM_HEIGHT))
-        self._list.addItem(item)
+    def _rebuild_topics(self) -> None:
+        for row in self._topic_rows:
+            row.setParent(None)
+        self._topic_rows.clear()
 
-    def _on_selection_changed(self, current: QListWidgetItem, _) -> None:
-        if current is not None:
-            course = current.data(Qt.ItemDataRole.UserRole)
+        for course in self._courses:
+            row = _TopicRow(course)
+            row.clicked.connect(self._make_handler(course, row))
+            row.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            row.customContextMenuRequested.connect(
+                lambda pos, c=course, r=row: self._show_menu(c, r, pos)
+            )
+            self._topics_layout.addWidget(row)
+            self._topic_rows.append(row)
+
+        self._topics_layout.addStretch(1)
+        self._refresh_active()
+
+    def _make_handler(self, course: dict, row: _TopicRow):
+        def _h():
+            self._active_id = course["id"]
+            self._refresh_active()
             self.course_selected.emit(course)
+        return _h
 
-    def _on_order_changed(self) -> None:
-        courses = self._all_courses()
-        self.courses_reordered.emit(courses)
+    def _refresh_active(self) -> None:
+        for i, row in enumerate(self._topic_rows):
+            if i < len(self._courses):
+                row.set_selected(self._courses[i]["id"] == self._active_id)
 
-    def _on_add_course(self) -> None:
-        dlg = AddCourseDialog(self)
+    def _on_add_topic(self) -> None:
+        dlg = AddTopicDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            course = dlg.get_course()
-            if course["name"] and course["folder"]:
-                self._add_item(course)
-                self.course_added.emit(course)
+            topic = dlg.get_topic()
+            if topic["name"] and topic["folder"]:
+                self._courses.append(topic)
+                self.course_added.emit(topic)
+                self._rebuild_topics()
 
-    def _show_context_menu(self, pos: QPoint) -> None:
-        item = self._list.itemAt(pos)
-        if item is None:
-            return
+    def _show_menu(self, course: dict, row: _TopicRow, pos) -> None:
         menu = QMenu(self)
-        delete_action = menu.addAction("Delete Course")
-        action = menu.exec(self._list.mapToGlobal(pos))
+        delete_action = menu.addAction("Delete Topic")
+        action = menu.exec(row.mapToGlobal(pos))
         if action == delete_action:
-            course = item.data(Qt.ItemDataRole.UserRole)
             confirm = QMessageBox.question(
-                self,
-                "Delete Course",
-                f"Delete \"{course['name']}\"? This only removes it from Scout — "
+                self, "Delete Topic",
+                f"Delete \"{course['name']}\"? This only removes it from Echos — "
                 "vault files are not affected.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if confirm == QMessageBox.StandardButton.Yes:
-                row = self._list.row(item)
-                self._list.takeItem(row)
+                self._courses = [c for c in self._courses if c["id"] != course["id"]]
+                if self._active_id == course["id"]:
+                    self._active_id = None
                 self.course_deleted.emit(course["id"])
+                self._rebuild_topics()
 
-    def _all_courses(self) -> list[dict]:
-        return [
-            self._list.item(i).data(Qt.ItemDataRole.UserRole)
-            for i in range(self._list.count())
-        ]
+    def _on_vault_changed(self) -> None:
+        if self._vault_path:
+            self._vault_tree.load_vault(self._vault_path)

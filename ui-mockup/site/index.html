@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Echos — UX fixes prototype</title>
+<meta name="viewport" content="width=1280" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f5f1;
+    --window-bg: #fbfaf6;
+    --sidebar-bg: #f1efe8;
+    --panel-bg: #ffffff;
+    --statusbar-bg: #ecebe4;
+    --border: #dcdacf;
+    --border-soft: #e5e3d9;
+    --text: #1d1c19;
+    --text-muted: #76746b;
+    --text-faint: #a09e93;
+    --accent: #c2410c;        /* amber */
+    --accent-soft: #fff1e6;
+    --accent-2: #be185d;      /* rose */
+    --recording: #d92f2f;
+    --paused: #c47a17;
+    --ready: #1c8b4a;
+    --hover: rgba(0,0,0,0.04);
+    --selected: rgba(194,65,12,0.10);
+    --selected-strong: rgba(194,65,12,0.18);
+    --shadow-window: 0 30px 80px -10px rgba(0,0,0,0.30), 0 8px 30px -6px rgba(0,0,0,0.18);
+  }
+  html, body { margin: 0; padding: 0; height: 100%; background: #2a2724; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text); -webkit-font-smoothing: antialiased; }
+  body { display: flex; align-items: center; justify-content: center; padding: 28px; box-sizing: border-box; }
+  * { box-sizing: border-box; }
+  button { font-family: inherit; cursor: pointer; }
+  ::selection { background: rgba(194,65,12,0.25); }
+  /* hide scrollbar visually */
+  .scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 8px; }
+  .scroll::-webkit-scrollbar-track { background: transparent; }
+
+  @keyframes pulse-rec {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.55; transform: scale(0.92); }
+  }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(217,47,47,0.4); }
+    70% { box-shadow: 0 0 0 8px rgba(217,47,47,0); }
+  }
+  @keyframes wave {
+    0%, 100% { transform: scaleY(0.3); }
+    50% { transform: scaleY(1); }
+  }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+  .fade-in { animation: fade-in 220ms ease both; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="vault-tree.jsx"></script>
+  <script type="text/babel" src="record-bar.jsx"></script>
+  <script type="text/babel" src="panels.jsx"></script>
+  <script type="text/babel" src="app.jsx"></script>
+</body>
+</html>

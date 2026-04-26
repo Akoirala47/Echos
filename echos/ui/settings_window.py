@@ -365,7 +365,7 @@ class _NotesTab(QWidget):
         self._frontmatter_check.setChecked(config.get("include_frontmatter", True))
 
         self._tags_edit = QLineEdit(
-            config.get("frontmatter_tags", "[{course_lower}, lecture, notes]")
+            config.get("frontmatter_tags", "[{course_lower}, notes]")
         )
 
         # Custom prompt suffix

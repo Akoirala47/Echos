@@ -79,10 +79,10 @@ class AppController:
         w.sidebar.course_deleted.connect(self._on_course_deleted)
         w.sidebar.courses_reordered.connect(self._on_courses_reordered)
         w.sidebar.settings_clicked.connect(self._on_settings)
+        w.sidebar.vault_folder_selected.connect(self._on_vault_folder_selected)
 
-        # Record bar
+        # Record bar — primary cycles Start/Pause/Resume; no Stop button
         w.record_bar.record_clicked.connect(self._on_record_clicked)
-        w.record_bar.pause_clicked.connect(self._on_pause_clicked)
 
         # Notes panel
         w.notes_panel.generate_requested.connect(self._on_generate_notes)
@@ -91,32 +91,43 @@ class AppController:
         # Status bar
         w.status_bar_widget.save_requested.connect(self._on_save)
         w.status_bar_widget.open_requested.connect(self._on_open_in_obsidian)
+        w.status_bar_widget.end_session_clicked.connect(self._on_end_session_requested)
+        w.status_bar_widget.new_session_clicked.connect(self._on_new_recording)
 
         # Menu bar
         w.settings_action.triggered.connect(self._on_settings)
         w.save_note_action.triggered.connect(self._on_save)
         w.new_recording_action.triggered.connect(self._on_new_recording)
+        w.end_session_action.triggered.connect(self._on_end_session_requested)
         w.export_transcript_action.triggered.connect(
             lambda: w.transcript_panel._on_export()
         )
         w.model_status_action.triggered.connect(self._on_model_status)
         w.open_log_action.triggered.connect(self._on_open_log)
 
-        # Keyboard shortcuts — respects user-configured record shortcut.
+        # Keyboard shortcuts per SPEC addendum §A:
+        #   ⌘R  → Start (IDLE) or Resume (PAUSED) only
+        #   ⌘P  → Pause (RECORDING) only
+        #   ⌘⇧E → End Session (with confirm)
         record_sc_str = self._config.get("record_shortcut", "Ctrl+R")
         self._record_shortcut = QShortcut(QKeySequence(record_sc_str), w)
-        self._record_shortcut.activated.connect(self._on_record_clicked)
+        self._record_shortcut.activated.connect(self._on_start_or_resume)
 
         self._pause_shortcut = QShortcut(QKeySequence("Ctrl+P"), w)
-        self._pause_shortcut.activated.connect(self._on_pause_clicked)
+        self._pause_shortcut.activated.connect(self._on_pause_only)
+
+        self._end_shortcut = QShortcut(QKeySequence("Ctrl+Shift+E"), w)
+        self._end_shortcut.activated.connect(self._on_end_session_requested)
 
     def _apply_initial_ui_state(self) -> None:
         vault = self._config.get("vault_path", "")
         self._window.status_bar_widget.set_vault_path(vault)
-        self._window.status_bar_widget.set_status("#888888", "Ready")
+        self._window.status_bar_widget.update_for_state("idle")
 
         courses = self._config.get("courses", [])
         self._window.sidebar.load_courses(courses)
+        if vault:
+            self._window.sidebar.set_vault_path(vault)
 
         # Disable generate button until recording stops.
         self._window.notes_panel.set_generate_enabled(False)
@@ -198,6 +209,20 @@ class AppController:
         else:
             self._lecture_num = 1
         self._window.record_bar.set_lecture_num(self._lecture_num)
+
+        # Update record bar topic header — breadcrumb shows vault-relative path
+        folder = course.get("folder", "")
+        if folder:
+            parts = folder.replace("\\", "/").split("/")
+            sep = "  ›  "   # spaced › like the mockup
+            breadcrumb = sep.join(parts)
+        else:
+            breadcrumb = ""
+        self._window.record_bar.set_topic(
+            course.get("name", ""),
+            course.get("color", "#c2410c"),
+            breadcrumb,
+        )
         self._window.update_course_header(course, self._lecture_num)
 
     def _on_course_added(self, course: dict) -> None:
@@ -220,16 +245,48 @@ class AppController:
     # ------------------------------------------------------------------
 
     def _on_record_clicked(self) -> None:
+        """Primary button full cycle: Start → Pause → Resume → New Session."""
         if self._state == AppState.IDLE:
             self._start_recording()
-        elif self._state in (AppState.RECORDING, AppState.PAUSED):
-            self._stop_recording()
-
-    def _on_pause_clicked(self) -> None:
-        if self._state == AppState.RECORDING:
+        elif self._state == AppState.RECORDING:
             self._pause_recording()
         elif self._state == AppState.PAUSED:
             self._resume_recording()
+        else:
+            # stopped / generating / notes_done / saved → new session
+            self._on_new_recording()
+
+    def _on_start_or_resume(self) -> None:
+        """⌘R: Start when IDLE, Resume when PAUSED, no-op otherwise."""
+        if self._state == AppState.IDLE:
+            self._start_recording()
+        elif self._state == AppState.PAUSED:
+            self._resume_recording()
+
+    def _on_pause_only(self) -> None:
+        """⌘P: Pause only when RECORDING."""
+        if self._state == AppState.RECORDING:
+            self._pause_recording()
+
+    def _on_end_session_requested(self) -> None:
+        """End Session button in status bar — show confirm dialog first."""
+        from PyQt6.QtWidgets import QMessageBox as _MB
+        reply = _MB.question(
+            self._window,
+            "End this session?",
+            "You won't be able to add more audio after ending.\n"
+            "Pause instead if you only need a short break.",
+            _MB.StandardButton.Yes | _MB.StandardButton.No,
+            _MB.StandardButton.No,
+        )
+        if reply == _MB.StandardButton.Yes:
+            self._stop_recording()
+
+    def _on_vault_folder_selected(self, rel_path: str) -> None:
+        """User clicked a folder in the vault tree — update save target."""
+        if self._current_course:
+            self._current_course = dict(self._current_course)
+            self._current_course["folder"] = rel_path
 
     def _start_recording(self) -> None:
         if not self._model_manager.is_loaded():
@@ -249,9 +306,6 @@ class AppController:
         self._window.transcript_panel.clear()
         self._window.notes_panel.clear()
         self._window.record_bar.reset_timer()
-        self._window.status_bar_widget.set_status("#E74C3C", "Recording")
-        self._window.status_bar_widget.set_save_enabled(False)
-        self._window.status_bar_widget.set_open_visible(False)
         self._window.notes_panel.set_generate_enabled(False)
         self._window.save_note_action.setEnabled(False)
 
@@ -284,21 +338,18 @@ class AppController:
         self._end_power_assertion()
         self._set_dock_badge(False)
 
-        self._window.status_bar_widget.set_status("#888888", "Recording stopped")
         self._window.notes_panel.set_generate_enabled(True)
 
     def _pause_recording(self) -> None:
         if self._audio_worker:
             self._audio_worker.pause()
         self._set_state(AppState.PAUSED)
-        self._window.status_bar_widget.set_status("#F39C12", "Paused")
         self._end_power_assertion()
 
     def _resume_recording(self) -> None:
         if self._audio_worker:
             self._audio_worker.resume()
         self._set_state(AppState.RECORDING)
-        self._window.status_bar_widget.set_status("#E74C3C", "Recording")
         self._begin_power_assertion()
 
     # ------------------------------------------------------------------
@@ -334,7 +385,6 @@ class AppController:
         self._window.notes_panel.clear()
         self._window.notes_panel.set_generating(True)
         self._set_state(AppState.GENERATING)
-        self._window.status_bar_widget.set_status("#2980B9", "Generating notes\u2026")
 
         self._notes_worker = NotesWorker(
             transcript=transcript,
@@ -356,14 +406,11 @@ class AppController:
         self._window.notes_panel.set_notes(full_text)
         self._window.notes_panel.set_generating(False)
         self._set_state(AppState.NOTES_DONE)
-        self._window.status_bar_widget.set_status("#27AE60", "Notes ready")
-        self._window.status_bar_widget.set_save_enabled(True)
         self._window.save_note_action.setEnabled(True)
 
     def _on_notes_error(self, message: str) -> None:
         self._window.notes_panel.set_generating(False)
         self._set_state(AppState.STOPPED)
-        self._window.status_bar_widget.set_status("#E74C3C", "Notes generation failed")
         show_error(self._window, "Notes Generation Failed", message)
 
     # ------------------------------------------------------------------
@@ -420,13 +467,10 @@ class AppController:
 
         try:
             saved_path = self._obsidian.save_note(vault, folder, num, content, course.get("name", ""), today)
-            self._set_state(AppState.SAVED)
-            self._window.status_bar_widget.set_status(
-                "#27AE60", f"Saved \u2014 {saved_path.name}"
-            )
-            self._window.status_bar_widget.set_open_visible(True)
+            self._saved_file_name = saved_path.name
             self._saved_vault_name = vault.name
             self._saved_file_path = f"{folder}/{saved_path.name}"
+            self._set_state(AppState.SAVED)
 
             if self._config.get("auto_open_obsidian", False):
                 self._on_open_in_obsidian()
@@ -460,11 +504,9 @@ class AppController:
         self._window.transcript_panel.clear()
         self._window.notes_panel.clear()
         self._window.record_bar.reset_timer()
-        self._window.status_bar_widget.set_status("#888888", "Ready")
-        self._window.status_bar_widget.set_save_enabled(False)
-        self._window.status_bar_widget.set_open_visible(False)
         self._window.notes_panel.set_generate_enabled(False)
         self._window.save_note_action.setEnabled(False)
+        self._saved_file_name = ""
         self._set_state(AppState.IDLE)
 
     # ------------------------------------------------------------------
@@ -479,7 +521,10 @@ class AppController:
         self._config.update(updated)
         self._config_mgr.save(self._config)
         self._window.sidebar.load_courses(self._config.get("courses", []))
-        self._window.status_bar_widget.set_vault_path(self._config.get("vault_path", ""))
+        vault = self._config.get("vault_path", "")
+        self._window.status_bar_widget.set_vault_path(vault)
+        if vault:
+            self._window.sidebar.set_vault_path(vault)
         new_device = self._config.get("inference_device", "auto")
         self._model_manager.set_device(new_device)
 
@@ -553,15 +598,27 @@ class AppController:
     # State machine
     # ------------------------------------------------------------------
 
+    _STATE_KEY = {
+        AppState.IDLE: "idle",
+        AppState.RECORDING: "recording",
+        AppState.PAUSED: "paused",
+        AppState.STOPPED: "stopped",
+        AppState.GENERATING: "generating",
+        AppState.NOTES_DONE: "notes_done",
+        AppState.SAVED: "saved",
+    }
+
     def _set_state(self, state: AppState) -> None:
         self._state = state
-        bar = self._window.record_bar
-        if state == AppState.RECORDING:
-            bar.set_state("recording")
-        elif state == AppState.PAUSED:
-            bar.set_state("paused")
-        else:
-            bar.set_state("idle")
+        key = self._STATE_KEY.get(state, "idle")
+        self._window.record_bar.set_state(key)
+        self._window.status_bar_widget.update_for_state(
+            key,
+            saved_filename=getattr(self, "_saved_file_name", ""),
+        )
+        # End Session menu item is only meaningful while a session is live
+        recording_live = state in (AppState.RECORDING, AppState.PAUSED)
+        self._window.end_session_action.setEnabled(recording_live)
 
     # ------------------------------------------------------------------
     # macOS power assertion

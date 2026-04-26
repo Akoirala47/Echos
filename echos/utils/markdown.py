@@ -1,34 +1,40 @@
 from __future__ import annotations
 
+_SYSTEM_INSTRUCTION = """\
+You are a concise note-taker. Convert spoken transcripts into clean, structured Obsidian-compatible markdown.
+
+Output ONLY the markdown document \u2014 start immediately with the # title heading.
+No preamble, no reasoning, no explanation, no meta-commentary about the transcript.
+
+Structure:
+- # Title on the first line
+- *Date* on the second line
+- ## for main topics, ### for subtopics
+- Bullet points for key facts and details
+- **Bold** on first use of each key term
+- Code blocks for code, formulas, or algorithms (only when present)
+- End with a ## Key Takeaways section\
+"""
+
+
+def build_system_instruction(custom_suffix: str = "") -> str:
+    """Return the system instruction, optionally extended with a custom focus."""
+    if custom_suffix.strip():
+        return _SYSTEM_INSTRUCTION + f"\n\nAdditional focus: {custom_suffix.strip()}"
+    return _SYSTEM_INSTRUCTION
+
 
 def build_prompt(
-    course_name: str,
-    lecture_num: int,
+    session_name: str,
+    session_num: int,
     date: str,
     transcript: str,
     custom_suffix: str = "",
 ) -> str:
-    """Assemble the full system prompt sent to Gemma for note generation."""
-    suffix_block = (
-        f"\n\nAdditional instruction: {custom_suffix.strip()}"
-        if custom_suffix.strip()
-        else ""
-    )
+    """Build the user-turn prompt (transcript + minimal context)."""
     return (
-        "You are a precise academic note-taker for computer science.\n"
-        "Convert the transcript below into clean Obsidian-compatible markdown notes.\n\n"
-        f"Course: {course_name}\n"
-        f"Lecture: {lecture_num}\n"
-        f"Date: {date}\n\n"
-        "Rules:\n"
-        f"- Start with: # {course_name} \u00b7 Lecture {lecture_num}\n"
-        f"- Second line: *{date}*\n"
-        "- ## for main topics, ### for subtopics\n"
-        "- Bullet points for all key facts\n"
-        "- Code blocks (```) for algorithms, pseudocode, formulas, complexity\n"
-        "- Bold (**term**) on first use of every key term\n"
-        '- Include a "## Key Takeaways" section at the end\n'
-        '- Output only the markdown. No preamble, no "Here are your notes:"\n'
-        f"{suffix_block}\n\n"
+        f"Session: {session_name} \u00b7 {session_num}\n"
+        f"Date: {date}\n"
+        f"Title heading to use: # {session_name} \u00b7 {session_num}\n\n"
         f"Transcript:\n{transcript}"
     )
