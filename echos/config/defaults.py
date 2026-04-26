@@ -1,5 +1,5 @@
 DEFAULT_CONFIG: dict = {
-    "version": "1.0",
+    "version": "1.1",
     "vault_path": "",
     "google_api_key": "",
     "gemma_model": "gemma-4-31b-it",

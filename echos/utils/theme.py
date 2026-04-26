@@ -55,6 +55,18 @@ def hover_bg()       -> str: return HOVER
 def selected_bg()    -> str: return SELECTED_STRONG
 
 
+# ── Tab bar ───────────────────────────────────────────────────────────────────
+TAB_BG               = WINDOW_BG    # tab bar background
+TAB_ACTIVE_TEXT      = TEXT         # active tab label colour
+TAB_INACTIVE_TEXT    = TEXT_MUTED   # inactive tab label colour
+TAB_ACTIVE_UNDERLINE = ACCENT       # 2px underline on active tab
+
+def tab_bg()               -> str: return TAB_BG
+def tab_active_text()      -> str: return TAB_ACTIVE_TEXT
+def tab_inactive_text()    -> str: return TAB_INACTIVE_TEXT
+def tab_active_underline() -> str: return TAB_ACTIVE_UNDERLINE
+
+
 # ── Notes CSS (QTextBrowser renderer) ─────────────────────────────────────────
 
 def notes_css() -> str:

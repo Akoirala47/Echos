@@ -1,93 +1,22 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
-    QPushButton,
     QSplitter,
-    QStackedWidget,
-    QTextBrowser,
     QVBoxLayout,
     QWidget,
-    QLabel,
 )
 
-from echos.ui.notes_panel import NotesPanel, _md_to_html
+from echos.ui.notes_panel import NotesPanel
 from echos.ui.record_bar import RecordBarWidget
 from echos.ui.sidebar import SidebarWidget
 from echos.ui.status_bar import StatusBarWidget
+from echos.ui.tab_manager import TabManager
 from echos.ui.transcript_panel import TranscriptPanel
-from echos.utils.theme import (
-    BORDER_SOFT, TEXT, TEXT_MUTED, TEXT_FAINT,
-    border_soft, panel_bg, window_bg,
-)
-
-
-class NotePreviewWidget(QWidget):
-    """Full-panel note viewer that replaces the recording UI when a vault note is opened."""
-
-    closed = pyqtSignal()
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"NotePreviewWidget {{ background: {window_bg()}; }}")
-
-        # ── Header ────────────────────────────────────────────────────────────
-        back_btn = QPushButton("← Back")
-        back_btn.setFlat(True)
-        back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        back_btn.setStyleSheet(
-            f"QPushButton {{ background: transparent; border: none;"
-            f" font-size: 12.5px; font-weight: 600; color: {TEXT_MUTED}; padding: 0 6px; }}"
-            f"QPushButton:hover {{ color: {TEXT}; }}"
-        )
-        back_btn.clicked.connect(self.closed)
-
-        self._title_lbl = QLabel()
-        self._title_lbl.setStyleSheet(
-            f"font-size: 13px; font-weight: 600; color: {TEXT_FAINT}; background: transparent;"
-        )
-
-        header = QWidget()
-        header.setFixedHeight(44)
-        header.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        header.setStyleSheet(
-            f"QWidget {{ background: {window_bg()}; border-bottom: 1px solid {BORDER_SOFT}; }}"
-        )
-        hr = QHBoxLayout(header)
-        hr.setContentsMargins(14, 0, 14, 0)
-        hr.setSpacing(10)
-        hr.addWidget(back_btn)
-        hr.addWidget(self._title_lbl, 1)
-
-        # ── Browser ───────────────────────────────────────────────────────────
-        self._browser = QTextBrowser()
-        self._browser.setOpenExternalLinks(True)
-        self._browser.setStyleSheet(
-            f"QTextBrowser {{ background: {panel_bg()}; border: none; }}"
-        )
-        self._browser.document().setDocumentMargin(24)
-
-        # ── Layout ────────────────────────────────────────────────────────────
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(header)
-        layout.addWidget(self._browser, 1)
-        self.setLayout(layout)
-
-    def load(self, path: Path) -> None:
-        self._title_lbl.setText(path.name)
-        try:
-            content = path.read_text(encoding="utf-8")
-            self._browser.setHtml(_md_to_html(content))
-        except Exception:
-            self._browser.setPlainText(f"Could not read: {path}")
+from echos.utils.theme import BORDER_SOFT, border_soft, window_bg
 
 
 class MainWindow(QMainWindow):
@@ -96,8 +25,8 @@ class MainWindow(QMainWindow):
     All UI sub-widgets are exposed as public attributes so AppController
     can connect signals without MainWindow needing to know about business logic.
 
-    The course/topic header is embedded in RecordBarWidget (row 1), so there
-    is no separate header bar here.
+    File tabs are managed by ``tab_manager``.  The Echoes tab (index 0) contains
+    the recording + notes view.  Clicking a vault note opens it in a new tab.
     """
 
     def __init__(self, parent=None) -> None:
@@ -106,14 +35,14 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(960, 640)
         self.resize(1220, 820)
 
-        # Sub-widgets (exposed for AppController)
+        # ── Sub-widgets (exposed for AppController) ───────────────────────────
         self.sidebar = SidebarWidget()
         self.record_bar = RecordBarWidget()
         self.transcript_panel = TranscriptPanel()
         self.notes_panel = NotesPanel()
         self.status_bar_widget = StatusBarWidget()
 
-        # Panels splitter (transcript | notes)
+        # ── Panels splitter (transcript | notes) ──────────────────────────────
         panels_splitter = QSplitter(Qt.Orientation.Horizontal)
         panels_splitter.addWidget(self.transcript_panel)
         panels_splitter.addWidget(self.notes_panel)
@@ -124,7 +53,7 @@ class MainWindow(QMainWindow):
             f"QSplitter::handle {{ background: {border_soft()}; }}"
         )
 
-        # Recording area (record bar + panels)
+        # ── Recording area (Echoes tab content) ───────────────────────────────
         recording_area = QWidget()
         recording_area.setStyleSheet(f"background: {window_bg()};")
         ra_layout = QVBoxLayout(recording_area)
@@ -133,19 +62,13 @@ class MainWindow(QMainWindow):
         ra_layout.addWidget(self.record_bar)
         ra_layout.addWidget(panels_splitter, 1)
 
-        # Note preview (replaces recording area when a vault note is opened)
-        self.note_preview = NotePreviewWidget()
-        self.note_preview.closed.connect(self.hide_note_preview)
+        # ── Tab manager: Echoes (index 0) + file tabs ─────────────────────────
+        self.tab_manager = TabManager(recording_area)
 
-        # Stacked content: 0 = recording, 1 = note preview
-        self._content_stack = QStackedWidget()
-        self._content_stack.addWidget(recording_area)
-        self._content_stack.addWidget(self.note_preview)
-
-        # Top splitter (sidebar | content stack)
+        # ── Top splitter (sidebar | tab widget) ───────────────────────────────
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
         top_splitter.addWidget(self.sidebar)
-        top_splitter.addWidget(self._content_stack)
+        top_splitter.addWidget(self.tab_manager.tab_widget)
         top_splitter.setSizes([248, 972])
         top_splitter.setCollapsible(0, False)
         top_splitter.setCollapsible(1, False)
@@ -160,7 +83,7 @@ class MainWindow(QMainWindow):
         status_border.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         status_border.setStyleSheet(f"background: {BORDER_SOFT};")
 
-        # Central widget
+        # ── Central widget ────────────────────────────────────────────────────
         central = QWidget()
         c_layout = QVBoxLayout(central)
         c_layout.setContentsMargins(0, 0, 0, 0)
@@ -171,15 +94,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._build_menu()
-
-    # ── Note preview ──────────────────────────────────────────────────────────
-
-    def show_note_preview(self, path: Path) -> None:
-        self.note_preview.load(path)
-        self._content_stack.setCurrentIndex(1)
-
-    def hide_note_preview(self) -> None:
-        self._content_stack.setCurrentIndex(0)
 
     # ── Menu ──────────────────────────────────────────────────────────────────
 

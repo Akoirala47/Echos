@@ -26,7 +26,20 @@ class ConfigManager:
             return dict(DEFAULT_CONFIG)
         merged = dict(DEFAULT_CONFIG)
         merged.update(saved)
-        return merged
+        return self._migrate(merged)
+
+    @staticmethod
+    def _migrate(config: dict) -> dict:
+        """Apply version-to-version migrations and return the updated config."""
+        version = config.get("version", "1.0")
+        if version == "1.0":
+            # 1.0 → 1.1: course.folder now supports multi-segment paths (e.g.
+            # "School/CS446/Lectures").  No data transformation needed — Path
+            # already handles "/" in folder strings — just bump the version so
+            # the migration doesn't run again on the next load.
+            config = dict(config)
+            config["version"] = "1.1"
+        return config
 
     def save(self, config: dict) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)

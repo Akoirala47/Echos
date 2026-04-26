@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 
 from echos.ui.widgets.waveform import WaveformWidget
 from echos.utils.theme import (
+    TEXT, TEXT_FAINT, TEXT_MUTED,
     accent, border_soft, paused_color, ready_color, recording_color,
     text, text_faint, text_muted, window_bg,
 )
@@ -52,6 +53,58 @@ def _resolve_dot(key: str) -> str:
     if key == "ready":
         return ready_color()
     return key
+
+
+# ── Clickable breadcrumb ──────────────────────────────────────────────────────
+
+class _BreadcrumbWidget(QWidget):
+    """Renders a folder path as clickable segments separated by › glyphs.
+
+    Clicking a segment emits ``segment_clicked`` with the cumulative path up to
+    and including that segment (e.g. clicking "CS446" in "School/CS446/Lectures"
+    emits "School/CS446").
+    """
+
+    segment_clicked = pyqtSignal(str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._row = QHBoxLayout(self)
+        self._row.setContentsMargins(0, 0, 0, 0)
+        self._row.setSpacing(2)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+
+    def set_path(self, folder_path: str) -> None:
+        """Rebuild segments for *folder_path* (e.g. ``"School/CS446/Lectures"``)."""
+        # Remove all existing child widgets
+        while self._row.count():
+            item = self._row.takeAt(0)
+            w = item.widget()
+            if w:
+                w.setParent(None)  # type: ignore[arg-type]
+
+        parts = [p for p in folder_path.replace("\\", "/").split("/") if p]
+        for i, part in enumerate(parts):
+            if i > 0:
+                sep = QLabel("›")
+                sep.setStyleSheet(
+                    f"font-size: 10px; color: {TEXT_FAINT}; background: transparent;"
+                )
+                self._row.addWidget(sep)
+
+            cumulative = "/".join(parts[: i + 1])
+            btn = QPushButton(part)
+            btn.setFlat(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(
+                f"QPushButton {{ background: transparent; border: none;"
+                f" font-size: 11px; color: {TEXT_FAINT}; padding: 0 2px; }}"
+                f"QPushButton:hover {{ color: {TEXT_MUTED}; }}"
+            )
+            btn.clicked.connect(lambda _checked, p=cumulative: self.segment_clicked.emit(p))
+            self._row.addWidget(btn)
+
+        self._row.addStretch()
 
 
 def _fmt_elapsed(seconds: int) -> str:
@@ -191,8 +244,9 @@ class RecordBarWidget(QWidget):
         in AppController; actual stop happens after confirmation).
     """
 
-    record_clicked = pyqtSignal()
+    record_clicked      = pyqtSignal()
     end_session_clicked = pyqtSignal()
+    breadcrumb_clicked  = pyqtSignal(str)  # cumulative folder path segment
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -228,10 +282,8 @@ class RecordBarWidget(QWidget):
             f"font-size: 15px; font-weight: 700; color: {text()};"
         )
 
-        self._breadcrumb_lbl = QLabel("")
-        self._breadcrumb_lbl.setStyleSheet(
-            f"font-size: 11px; color: {text_faint()};"
-        )
+        self._breadcrumb = _BreadcrumbWidget()
+        self._breadcrumb.segment_clicked.connect(self.breadcrumb_clicked)
 
         self._session_spin = QSpinBox()
         self._session_spin.setRange(1, 999)
@@ -251,7 +303,7 @@ class RecordBarWidget(QWidget):
         header_row.setSpacing(8)
         header_row.addWidget(self._dot_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
         header_row.addWidget(self._topic_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
-        header_row.addWidget(self._breadcrumb_lbl, 1, Qt.AlignmentFlag.AlignVCenter)
+        header_row.addWidget(self._breadcrumb, 1, Qt.AlignmentFlag.AlignVCenter)
         header_row.addWidget(self._session_spin, 0, Qt.AlignmentFlag.AlignVCenter)
 
         header_widget = QWidget()
@@ -331,13 +383,15 @@ class RecordBarWidget(QWidget):
             self._timer.stop()
             self.waveform.set_active(False)
 
-    def set_topic(self, name: str, color: str, breadcrumb: str) -> None:
+    def set_topic(self, name: str, color: str, folder_path: str) -> None:
+        """Update the header row.
+
+        *folder_path* is the raw vault-relative path, e.g. ``"School/CS446/Lectures"``.
+        Each segment is rendered as a separate clickable button.
+        """
         self._topic_lbl.setText(name)
-        self._dot_lbl.setStyleSheet(
-            f"border-radius: 4px; background: {color};"
-        )
-        # breadcrumb arrives as "School › CS446 › Lectures" from app.py
-        self._breadcrumb_lbl.setText(breadcrumb)
+        self._dot_lbl.setStyleSheet(f"border-radius: 4px; background: {color};")
+        self._breadcrumb.set_path(folder_path)
         self.waveform.set_accent_color(QColor(color))
 
     def set_session_num(self, num: int) -> None:

@@ -81,6 +81,7 @@ class AppController:
         w.sidebar.settings_clicked.connect(self._on_settings)
         w.sidebar.vault_folder_selected.connect(self._on_vault_folder_selected)
         w.sidebar.note_selected.connect(self._on_note_selected)
+        w.record_bar.breadcrumb_clicked.connect(self._on_breadcrumb_clicked)
 
         # Record bar — primary cycles Start/Pause/Resume; no Stop button
         w.record_bar.record_clicked.connect(self._on_record_clicked)
@@ -211,18 +212,12 @@ class AppController:
             self._lecture_num = 1
         self._window.record_bar.set_lecture_num(self._lecture_num)
 
-        # Update record bar topic header — breadcrumb shows vault-relative path
-        folder = course.get("folder", "")
-        if folder:
-            parts = folder.replace("\\", "/").split("/")
-            sep = "  ›  "   # spaced › like the mockup
-            breadcrumb = sep.join(parts)
-        else:
-            breadcrumb = ""
+        # Update record bar topic header with the raw folder path (each segment
+        # is rendered as an individual clickable breadcrumb button).
         self._window.record_bar.set_topic(
             course.get("name", ""),
             course.get("color", "#c2410c"),
-            breadcrumb,
+            course.get("folder", ""),
         )
         self._window.update_course_header(course, self._lecture_num)
 
@@ -290,8 +285,12 @@ class AppController:
             self._current_course["folder"] = rel_path
 
     def _on_note_selected(self, path_str: str) -> None:
-        """User clicked a .md file in the vault tree — open preview."""
-        self._window.show_note_preview(Path(path_str))
+        """User clicked a .md file in the vault tree — open in a new editor tab."""
+        self._window.tab_manager.open_file(path_str)
+
+    def _on_breadcrumb_clicked(self, folder_path: str) -> None:
+        """User clicked a breadcrumb segment — scroll the sidebar tree to that folder."""
+        self._window.sidebar.scroll_to_folder(folder_path)
 
     def _start_recording(self) -> None:
         if not self._model_manager.is_loaded():

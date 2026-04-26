@@ -126,3 +126,33 @@ def test_save_note_overwrites_existing_file(mgr: ObsidianManager, tmp_path: Path
     mgr.save_note(tmp_path, "CS446", 1, "updated", "CS446", "2026-04-25")
     path = tmp_path / "CS446" / "Lecture-01.md"
     assert path.read_text(encoding="utf-8") == "updated"
+
+
+# ---------------------------------------------------------------------------
+# next_lecture_num — nested (multi-segment) folder paths  (T-B64)
+# ---------------------------------------------------------------------------
+
+def test_next_lecture_num_nested_path_missing(mgr: ObsidianManager, tmp_path: Path) -> None:
+    # Neither "School" nor "School/CS446" exist yet — should return 1.
+    assert mgr.next_lecture_num(tmp_path, "School/CS446") == 1
+
+
+def test_next_lecture_num_nested_path_with_lectures(mgr: ObsidianManager, tmp_path: Path) -> None:
+    nested = tmp_path / "School" / "CS446"
+    nested.mkdir(parents=True)
+    (nested / "Lecture-02.md").write_text("x")
+    (nested / "Lecture-05.md").write_text("x")
+    assert mgr.next_lecture_num(tmp_path, "School/CS446") == 6
+
+
+def test_next_lecture_num_three_levels_deep(mgr: ObsidianManager, tmp_path: Path) -> None:
+    deep = tmp_path / "2026" / "Spring" / "MATH215"
+    deep.mkdir(parents=True)
+    (deep / "Lecture-10.md").write_text("x")
+    assert mgr.next_lecture_num(tmp_path, "2026/Spring/MATH215") == 11
+
+
+def test_save_note_nested_path_creates_intermediate_dirs(mgr: ObsidianManager, tmp_path: Path) -> None:
+    path = mgr.save_note(tmp_path, "School/CS446/Lectures", 1, "notes", "CS446", "2026-04-26")
+    assert path.exists()
+    assert path.parent == tmp_path / "School" / "CS446" / "Lectures"

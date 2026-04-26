@@ -274,6 +274,32 @@ class _VaultTree(QTreeWidget):
                 else:
                     parent.addChild(item)
 
+    def expand_to_path(self, folder_path: str) -> None:
+        """Expand and select the tree item matching *folder_path* (relative to vault)."""
+        parts = [p for p in folder_path.replace("\\", "/").split("/") if p]
+        if not parts:
+            return
+        item = self._find_item_by_parts(self.invisibleRootItem(), parts)
+        if item:
+            self.expandItem(item)
+            self.setCurrentItem(item)
+            self.scrollToItem(item, QAbstractItemView.ScrollHint.EnsureVisible)
+
+    def _find_item_by_parts(
+        self, parent: QTreeWidgetItem, parts: list[str]
+    ) -> QTreeWidgetItem | None:
+        if not parts:
+            return None
+        target = parts[0]
+        for i in range(parent.childCount()):
+            child = parent.child(i)
+            if child.text(0) == target:
+                if len(parts) == 1:
+                    return child
+                self.expandItem(child)
+                return self._find_item_by_parts(child, parts[1:])
+        return None
+
     def _on_item_clicked(self, item: QTreeWidgetItem, _col: int) -> None:
         data = item.data(0, Qt.ItemDataRole.UserRole) or {}
         if data.get("kind") == "folder" and self._vault_root:
@@ -311,13 +337,55 @@ class _ColorSwatch(QWidget):
         p.end()
 
 
+# ── Vault folder picker dialog (used by AddTopicDialog) ───────────────────────
+
+class _FolderPickerDialog(QDialog):
+    """Compact dialog that shows the vault tree so the user can pick a folder."""
+
+    def __init__(self, vault_path: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Choose Vault Folder")
+        self.setMinimumSize(300, 360)
+
+        self._selected: str = ""
+
+        self._tree = _VaultTree()
+        self._tree.folder_selected.connect(self._on_folder_selected)
+        if vault_path:
+            self._tree.load_vault(vault_path)
+
+        self._ok_btn = QPushButton("Select")
+        self._ok_btn.setEnabled(False)
+        self._ok_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(self._ok_btn)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.addWidget(self._tree, 1)
+        layout.addLayout(btn_row)
+
+    def _on_folder_selected(self, path: str) -> None:
+        self._selected = path
+        self._ok_btn.setEnabled(True)
+
+    def selected_path(self) -> str:
+        return self._selected
+
+
 # ── Add Topic dialog ──────────────────────────────────────────────────────────
 
 class AddTopicDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, vault_path: str = "", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Add Topic")
-        self.setFixedWidth(340)
+        self.setFixedWidth(360)
+        self._vault_path = vault_path
 
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("e.g. CS446, Work Meetings, Research")
@@ -325,6 +393,21 @@ class AddTopicDialog(QDialog):
 
         self._folder_edit = QLineEdit()
         self._folder_edit.setPlaceholderText("e.g. School/CS446/Lectures")
+
+        self._browse_btn = QPushButton("Browse…")
+        self._browse_btn.setEnabled(bool(vault_path))
+        self._browse_btn.setFixedHeight(26)
+        self._browse_btn.setStyleSheet(
+            f"QPushButton {{ font-size: 11.5px; padding: 0 10px; }}"
+        )
+        self._browse_btn.clicked.connect(self._on_browse)
+
+        folder_container = QWidget()
+        folder_row = QHBoxLayout(folder_container)
+        folder_row.setContentsMargins(0, 0, 0, 0)
+        folder_row.setSpacing(6)
+        folder_row.addWidget(self._folder_edit, 1)
+        folder_row.addWidget(self._browse_btn)
 
         self._selected_color = _PRESET_COLORS[0]
         swatches = QHBoxLayout()
@@ -345,7 +428,7 @@ class AddTopicDialog(QDialog):
 
         form = QFormLayout()
         form.addRow("Name:", self._name_edit)
-        form.addRow("Vault folder:", self._folder_edit)
+        form.addRow("Vault folder:", folder_container)
         form.addRow("Color:", swatches)
 
         layout = QVBoxLayout(self)
@@ -359,6 +442,13 @@ class AddTopicDialog(QDialog):
             sw._set_selected(True)
             self._selected_color = sw._color
         return _h
+
+    def _on_browse(self) -> None:
+        dlg = _FolderPickerDialog(self._vault_path, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            path = dlg.selected_path()
+            if path:
+                self._folder_edit.setText(path)
 
     def _on_name_changed(self, name: str) -> None:
         if not self._folder_edit.text():
@@ -536,6 +626,16 @@ class SidebarWidget(QWidget):
         self._vault_tree.note_selected.connect(self.note_selected)
         vault_sec_hdr.toggled.connect(self._vault_tree.setVisible)
 
+        # T-B66: empty-state label — shown when vault is not set or is empty
+        self._vault_empty_lbl = QLabel()
+        self._vault_empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._vault_empty_lbl.setWordWrap(True)
+        self._vault_empty_lbl.setStyleSheet(
+            f"color: {TEXT_FAINT}; font-size: 11.5px; padding: 16px 12px;"
+            f" background: transparent;"
+        )
+        self._vault_empty_lbl.hide()
+
         vault_section = QWidget()
         vault_section.setStyleSheet(
             f"background: {SIDEBAR_BG}; border-bottom: 1px solid {BORDER_SOFT};"
@@ -545,6 +645,7 @@ class SidebarWidget(QWidget):
         vsl.setSpacing(0)
         vsl.addWidget(vault_sec_hdr)
         vsl.addWidget(self._vault_tree, 1)
+        vsl.addWidget(self._vault_empty_lbl)
 
         # ── TOPICS section ────────────────────────────────────────────────────
         topics_sec_hdr = _SectionHeader("Topics")
@@ -618,6 +719,9 @@ class SidebarWidget(QWidget):
         outer.addWidget(footer)
         self.setLayout(outer)
 
+        # Initial empty state (no vault set yet)
+        self._update_vault_state()
+
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def set_vault_path(self, vault_path: str) -> None:
@@ -631,6 +735,7 @@ class SidebarWidget(QWidget):
         self._vault_path_lbl.setText(str(Path(display).parent))
         self._vault_tree.load_vault(vault_path)
         self._watcher.watch(vault_path)
+        self._update_vault_state()
 
     def load_courses(self, courses: list[dict]) -> None:
         self._courses = list(courses)
@@ -671,8 +776,32 @@ class SidebarWidget(QWidget):
             if i < len(self._courses):
                 row.set_selected(self._courses[i]["id"] == self._active_id)
 
+    def scroll_to_folder(self, folder_path: str) -> None:
+        """Expand the vault section and scroll to *folder_path* in the tree."""
+        if not folder_path:
+            return
+        self._vault_tree.expand_to_path(folder_path)
+
+    def _update_vault_state(self) -> None:
+        """Show/hide the vault tree and empty-state label based on current state."""
+        if not self._vault_path:
+            self._vault_tree.hide()
+            self._vault_empty_lbl.setText(
+                "Set a vault path in Settings to browse your notes."
+            )
+            self._vault_empty_lbl.show()
+        elif self._vault_tree.topLevelItemCount() == 0:
+            self._vault_tree.hide()
+            self._vault_empty_lbl.setText(
+                "Vault is empty — your notes will appear here once created."
+            )
+            self._vault_empty_lbl.show()
+        else:
+            self._vault_empty_lbl.hide()
+            self._vault_tree.show()
+
     def _on_add_topic(self) -> None:
-        dlg = AddTopicDialog(self)
+        dlg = AddTopicDialog(vault_path=self._vault_path, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             topic = dlg.get_topic()
             if topic["name"] and topic["folder"]:
@@ -701,6 +830,7 @@ class SidebarWidget(QWidget):
     def _on_vault_changed(self) -> None:
         if self._vault_path:
             self._vault_tree.load_vault(self._vault_path)
+            self._update_vault_state()
 
     def _on_create_folder(self) -> None:
         if not self._vault_path:

@@ -312,12 +312,12 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
 - [x] **T-B58** `echos/core/vault_watcher.py` — VaultWatcher (QFileSystemWatcher) keeping tree in sync.
 - [x] **T-B59** `echos/ui/widgets/vault_tree.py` — VaultTreeWidget with hover "Record here" pill.
 - [x] **T-B60** `echos/ui/sidebar.py` — split layout: VAULT tree + TOPICS, collapsible.
-- [ ] **T-B61** Path picker in AddTopicDialog using the vault tree.
-- [ ] **T-B62** Migration shim: `folder` accepts multi-segment paths; bump config version to 1.1.
-- [ ] **T-B63** Breadcrumb segments in course header are clickable (scroll tree).
-- [ ] **T-B64** `next_lecture_num` unit test for nested paths.
-- [ ] **T-B65** `tests/test_vault_watcher.py`.
-- [ ] **T-B66** Empty-state messages in vault tree when no vault set / vault empty.
+- [x] **T-B61** Path picker in AddTopicDialog using the vault tree.
+- [x] **T-B62** Migration shim: `folder` accepts multi-segment paths; bump config version to 1.1.
+- [x] **T-B63** Breadcrumb segments in course header are clickable (scroll tree).
+- [x] **T-B64** `next_lecture_num` unit test for nested paths.
+- [x] **T-B65** `tests/test_vault_watcher.py`.
+- [x] **T-B66** Empty-state messages in vault tree when no vault set / vault empty.
 
 ### Phase 18C — Design System
 
@@ -337,3 +337,205 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
 - [x] **T-P75** `echos/core/notes_worker.py` — Strip `<thinking>`/`<thought>` LLM reasoning blocks from generated notes before emitting `done` signal.
 - [x] **T-P76** `echos/ui/main_window.py` + `echos/ui/sidebar.py` + `echos/app.py` — Note file preview: clicking a `.md` file in the vault tree opens it in a `NotePreviewWidget` (stacked over the recording view) with a "← Back" button to return.
 - [x] **T-P77** `assets/create_assets.py` — New Qt-rendered app icon: warm rounded-square background, concentric pastel rings, stylised alien-listener face (mint orbs, golden eyes, teal ear pads).
+
+---
+
+## Phase 20 — Multi-Tab Editor
+
+> All UI in this phase must follow the warm-parchment design language in `echos/utils/theme.py`. See `newversionedition-spec.md §UI Design Language Constraint`.
+
+- [x] **T-E01** `echos/utils/theme.py` — Add tab-specific tokens: `TAB_ACTIVE_UNDERLINE = ACCENT`, `TAB_BG = WINDOW_BG`, `TAB_INACTIVE_TEXT = TEXT_MUTED`. No new background colours — reuse existing tokens only.
+
+- [x] **T-E02** `echos/ui/tab_bar.py` — `EchosTabBar(QTabBar)`:
+  - `WINDOW_BG` background, `BORDER_SOFT` 1px bottom edge, `ACCENT` 2px underline on active tab.
+  - First tab ("Echoes") has no close button — override `tabButton` to return `None` for index 0.
+  - All other tabs: ×-button (12px, `TEXT_FAINT`), hover darkens to `TEXT`.
+  - Tab text: `TEXT` (active), `TEXT_MUTED` (inactive). Font size 12px, weight 500.
+  - Emits `file_tab_close_requested(path: str)`.
+
+- [x] **T-E03** `echos/ui/editor_tab.py` — `EditorTab(QWidget)`:
+  - Wraps a `QWebEngineView` loading a local `echos/assets/editor.html` page.
+  - Three modes toggled by a segmented control in the tab's toolbar row (32px header, same pattern as other panel headers):
+    - **Preview** — `marked.js` renders markdown; `PANEL_BG` background; styled with `notes_css()` from `theme.py`.
+    - **Raw** — CodeMirror 6 in read-only mode; `PANEL_BG` bg; gutter `SIDEBAR_BG`; selection `SELECTED`; cursor `ACCENT`.
+    - **Edit** — CodeMirror 6 editable; same colours as Raw.
+  - `load_file(path: str)` — reads file, passes content + initial mode to the web page via `QWebEngineView.page().runJavaScript`.
+  - `get_content() -> str` — retrieves current editor content via JS bridge.
+  - `save_file()` — writes content back to disk atomically (write temp, rename); emits `file_saved(path: str)`.
+  - `set_mode(mode: Literal["preview", "raw", "edit"])` — communicates mode change to JS.
+  - Emits: `content_changed()`, `file_saved(path: str)`.
+
+- [x] **T-E04** `echos/assets/editor.html` — Self-contained HTML/JS/CSS page served locally:
+  - Bundles CodeMirror 6 (codemirror, @codemirror/lang-markdown, @codemirror/view) and `marked.js` — all vendored into `echos/assets/vendor/` (no CDN calls).
+  - Exposes a `window.echos` JS API: `setContent(text)`, `getContent()`, `setMode(mode)`.
+  - Python↔JS bridge via `QWebChannel` (`qwebchannel.js` vendored): `EchosWebBridge` QObject with `content_changed` signal and `file_saved` slot.
+  - Background `PANEL_BG` (`#ffffff`), gutter `SIDEBAR_BG` (`#f1efe8`), selection highlight `SELECTED` (`rgba(194,65,12,0.10)`), cursor `ACCENT` (`#c2410c`).
+
+- [x] **T-E05** `echos/ui/tab_manager.py` — `TabManager`:
+  - Owns a `QTabWidget` using `EchosTabBar`.
+  - Index 0 is always the Echoes tab (the existing recording/notes `QSplitter` view) — never closed.
+  - `open_file(path: str)` — if path already open, focus that tab; otherwise create new `EditorTab`, add tab with filename as label, set focus.
+  - `close_tab(index: int)` — if tab has unsaved changes, show confirmation dialog (warm-styled `QMessageBox` matching `WINDOW_BG` + `TEXT`); remove tab.
+  - `current_tab() -> EditorTab | None`.
+  - Tracks `{path → tab_index}` mapping.
+
+- [x] **T-E06** `echos/ui/main_window.py` — integrate tab system:
+  - Replace the central `QSplitter` with `TabManager.tab_widget`.
+  - Wire sidebar vault-tree file-click signal (`file_selected(path)`) → `tab_manager.open_file(path)`.
+  - Remove the stacked `NotePreviewWidget` overlay (T-P76) — file preview now opens as a proper editor tab instead.
+  - Keep the Echoes tab (index 0) as the default/home view.
+
+- [x] **T-E07** `tests/test_tab_manager.py` — unit tests: open file creates tab, second open of same file focuses existing tab, Echoes tab cannot be closed, close with unsaved changes triggers dialog.
+
+---
+
+## Phase 21 — Graph Canvas (Brain View)
+
+> Background `CANVAS_BG = "#1c1b17"` (add to `theme.py`). All overlay UI uses standard warm tokens on `PANEL_BG` cards. Transitions: 150ms opacity fade for UI elements, spring-physics settle for force simulation.
+
+- [ ] **T-G01** `echos/utils/theme.py` — Add `CANVAS_BG = "#1c1b17"`, `CANVAS_NODE_DEFAULT = "#f6f5f1"`, `CANVAS_EDGE_STRONG = ACCENT`, `CANVAS_EDGE_WEAK = BORDER`, `CANVAS_LABEL = TEXT_FAINT`. Graph domain-cluster palette (6 colours, warm + muted tones): add as `DOMAIN_PALETTE = [...]` list.
+
+- [ ] **T-G02** `echos/assets/graph.html` — Self-contained D3 v7 force-directed graph page (D3 vendored into `echos/assets/vendor/`):
+  - Canvas background `CANVAS_BG`. Dot-grid overlay (subtle, 20px spacing, `rgba(255,255,255,0.04)` dots).
+  - **File nodes**: circles (r=7), filled by primary domain colour from `DOMAIN_PALETTE`. Label below node in 11px `TEXT_FAINT`-equivalent (`#a09e93`). On hover: grow to r=9 (150ms ease), show tooltip card (filename + fingerprint concepts) on `PANEL_BG` (`#ffffff`) with `BORDER_SOFT` border + `TEXT` text.
+  - **Directory regions**: convex hulls (`d3.polygonHull`) drawn as filled polygons (`CANVAS_BG` +8% lightness fill, `BORDER`-equivalent stroke `rgba(220,218,207,0.3)`). Directory name label in 10px uppercase `TEXT_FAINT`-equivalent. Not clickable.
+  - **Edges**: cubic bezier curves. Three visual types — concept-overlap (solid, 1.5px, domain colour at 60% opacity), vector-similarity (dashed 4/3, 1px, `BORDER`-equivalent), wikilink (solid, 2px, `ACCENT`-equivalent with arrowhead marker). Edge opacity scales linearly with `strength` (0.0–1.0 → 20%–80% opacity).
+  - **Force simulation**: `d3.forceSimulation` with `forceLink` (distance 80), `forceManyBody` (strength -120), `forceCollide` (r=14), `forceCenter`.
+  - **Zoom + pan**: `d3.zoom` on the SVG container. Scroll to zoom, drag to pan.
+  - **JS API** (via `QWebChannel`): `loadGraph(data)` — accepts `{nodes: [...], edges: [...]}` JSON; `expandDirectory(dirId)` — triggers fractal expansion; `collapseDirectory(dirId)`.
+  - `window.echosBridge` callbacks: `onNodeClicked(filePath)`, `onReady()`.
+
+- [ ] **T-G03** `echos/assets/graph.html` (fractal expansion):
+  - Collapsed directories show as a single dim cluster node. Clicking a directory node calls `expandDirectory`.
+  - Children spawn at parent centroid position with zero velocity + outward radial impulse (angle = 2π × i/n + jitter).
+  - Opacity transition 0→1 over 300ms (CSS transition on the SVG elements).
+  - Force simulation `alpha` restarted at 0.5, decays naturally — children settle via spring physics.
+  - Collapse: children fade out (opacity 1→0, 200ms), then are removed from the DOM + simulation.
+  - Directory hull polygon redraws live as nodes move (re-computed on each `tick`).
+
+- [ ] **T-G04** `echos/ui/graph_canvas.py` — `GraphCanvasWidget(QWidget)`:
+  - Wraps `QWebEngineView` loading `echos/assets/graph.html`.
+  - `QWebChannel` bridge: `EchosGraphBridge(QObject)` with `node_clicked(path: str)` signal and `load_graph(json_str: str)` slot.
+  - `set_graph_data(nodes: list, edges: list)` — serialises to JSON, calls `loadGraph` via JS.
+  - `expand_directory(dir_id: str)` / `collapse_directory(dir_id: str)` — calls JS.
+  - Toolbar overlay (floating `QWidget` atop the web view, top-left): "← Back" ghost button (`PANEL_BG` bg, `BORDER_SOFT` border, `TEXT` text, 6px radius, 8px padding). Clicking emits `back_requested`.
+  - Toolbar also shows vault name label (`TEXT_FAINT`, 11px) and a search field (`PANEL_BG`, `BORDER_SOFT` border, `TEXT` placeholder) that filters visible nodes by name.
+
+- [ ] **T-G05** `echos/ui/main_window.py` + `echos/ui/sidebar.py` — wire graph view transition:
+  - Sidebar vault-name header now has the vault icon as a clickable button. Clicking it emits `graph_view_requested`.
+  - `MainWindow` stacks `GraphCanvasWidget` over the tab layout (using `QStackedWidget` or `raise_()`). Show on `graph_view_requested`, hide on `GraphCanvasWidget.back_requested`.
+  - Transition: fade in/out using `QGraphicsOpacityEffect` + `QPropertyAnimation` (150ms).
+
+- [ ] **T-G06** `echos/app.py` — wire graph data:
+  - `_on_graph_view_requested()` — pulls nodes + edges from `VaultIndex`, calls `graph_canvas.set_graph_data(...)`. Show only indexed files; unindexed files shown as grey placeholder nodes.
+  - `_on_graph_node_clicked(path)` — calls `tab_manager.open_file(path)`, hides graph view.
+
+- [ ] **T-G07** `tests/test_graph_canvas.py` — unit tests: `set_graph_data` serialises correctly, back button emits `back_requested`, node-click signal propagates.
+
+---
+
+## Phase 22 — Fingerprint System
+
+- [ ] **T-F01** `echos/utils/theme.py` — No new UI tokens needed for this phase.
+
+- [ ] **T-F02** `echos/core/fingerprint.py` — `FingerprintEngine`:
+  - `generate(note_body: str, existing_fingerprints: list[str], api_key: str, model_id: str) -> Fingerprint`
+  - `Fingerprint` dataclass: `concepts: list[str]` (5–8 terms), `domains: list[str]` (2–3 broad clusters), `content_hash: str` (first 4 chars of SHA-256 of note body).
+  - `to_string() -> str` — encodes as `"concepts:[a,b,c] | domain:[x,y] | hash:ab3f"` (≤100 chars).
+  - `from_string(s: str) -> Fingerprint` — parses the compact string format.
+  - LLM call: passes note body + all existing fingerprint strings to the Google Generative AI API (same `api_key` + `model_id` as notes generation). System prompt instructs the model to (a) prefer reusing existing concept terms before minting new ones, (b) return only the fingerprint JSON object, no preamble.
+  - Pre-filter: before calling the LLM, `EmbeddingEngine.top_k_similar(concepts_string, k=20)` narrows which fingerprints to pass (see T-F03). If vault has ≤30 notes, skip pre-filter and pass all.
+  - Vocabulary guard: if a new concept term would push the unique concept count beyond 200, attempt consolidation via a second LLM call (merge near-synonyms) before accepting the new term.
+
+- [ ] **T-F03** `echos/core/embeddings.py` — `EmbeddingEngine`:
+  - Uses `sentence-transformers/all-MiniLM-L6-v2` (22 MB) via the `sentence-transformers` package.
+  - `embed(text: str) -> np.ndarray` — returns 384-dim float32 vector.
+  - `top_k_similar(query_text: str, k: int) -> list[str]` — loads all stored vectors from `VaultIndex`, computes cosine similarity, returns top-k note IDs.
+  - Model is loaded lazily on first call and cached in memory. Emits a `QThread` signal if loaded on first use so the UI can show a status indicator.
+  - Handles `ImportError` gracefully if `sentence-transformers` is not installed — falls back to passing all fingerprints (no pre-filter).
+
+- [ ] **T-F04** `echos/core/notes_worker.py` — extend post-generation pipeline:
+  - After `done` signal is assembled, trigger `FingerprintEngine.generate(...)` in the same worker thread.
+  - Inject the fingerprint into the note's YAML frontmatter via `inject_frontmatter` (update `echos/utils/frontmatter.py` to accept an optional `fingerprint: str` kwarg).
+  - Emit the updated note body (with fingerprint in frontmatter) via the existing `done` signal — callers receive the fingerprint-annotated note transparently.
+
+- [ ] **T-F05** `echos/utils/frontmatter.py` — add `fingerprint` field to YAML block:
+  - If `fingerprint` kwarg is provided, append `fingerprint: "{fingerprint_string}"` line to the YAML block.
+  - Existing callers not passing `fingerprint` are unaffected (default `None`).
+
+- [ ] **T-F06** `tests/test_fingerprint.py` — unit tests: `Fingerprint.to_string` / `from_string` roundtrip, compact string ≤100 chars, vocabulary guard triggers consolidation at 201 concepts, pre-filter skipped for ≤30 notes.
+
+---
+
+## Phase 23 — Indexing System
+
+- [ ] **T-I01** `echos/core/vault_index.py` — `VaultIndex`:
+  - SQLite database at `{vault_root}/.echoes/vault.index.db`. Creates `.echoes/` on first use.
+  - Schema:
+    - `notes(id TEXT PK, path TEXT UNIQUE, modified_at REAL, content_hash TEXT, fingerprint_text TEXT, vector_blob BLOB, dirty INTEGER DEFAULT 0)`
+    - `edges(source_id TEXT, target_id TEXT, strength REAL, reason TEXT, edge_type TEXT, created_at REAL, PRIMARY KEY(source_id, target_id))`
+    - `tags(note_id TEXT, tag TEXT, source TEXT CHECK(source IN ('llm','user')), PRIMARY KEY(note_id, tag))`
+  - Methods: `upsert_note(...)`, `set_dirty(path)`, `get_dirty_notes() -> list`, `upsert_edge(...)`, `delete_outgoing_edges(note_id)`, `get_edges(note_id) -> list`, `get_all_nodes() -> list`, `get_all_edges() -> list`, `clear_index()`.
+  - All writes are wrapped in transactions. Connection is kept open for the process lifetime (single `sqlite3.Connection`, thread-lock protected).
+
+- [ ] **T-I02** `echos/core/index_worker.py` — `IndexWorker(QThread)`:
+  - Signals: `progress(done: int, total: int)`, `note_indexed(path: str)`, `error(msg: str)`, `finished()`.
+  - Constructor: `vault_index: VaultIndex`, `embedding_engine: EmbeddingEngine`, `fingerprint_engine: FingerprintEngine`.
+  - `run()`: process `vault_index.get_dirty_notes()` in batches of 20–30. For each batch:
+    1. Read note content from disk.
+    2. Compute embedding via `EmbeddingEngine.embed(fingerprint_concepts_string)`, store vector in DB.
+    3. Call `FingerprintEngine.generate(...)`, store fingerprint text in DB.
+    4. Delete outgoing edges for this note, recompute via LLM connection list, store new edges.
+    5. Set `dirty=0` on the note, emit `note_indexed`.
+  - Slots: `stop()` — sets a threading.Event; worker exits cleanly after finishing the current batch.
+
+- [ ] **T-I03** `echos/core/vault_watcher.py` — extend existing `VaultWatcher`:
+  - On file change event: call `vault_index.set_dirty(path)` and enqueue for re-indexing.
+  - Debounce: coalesce rapid saves (e.g. 10 saves in 2s) — only enqueue once after a 30s quiet period using a `QTimer` one-shot.
+  - On file delete: remove the note row and all its edges from the index.
+  - `VaultWatcher` takes `vault_index: VaultIndex | None = None` in its constructor (backwards-compatible default).
+
+- [ ] **T-I04** `echos/app.py` — wire indexing into app lifecycle:
+  - On vault path set / vault watcher start: instantiate `VaultIndex`, `EmbeddingEngine`, `FingerprintEngine`, `IndexWorker`.
+  - On first launch (index missing or empty): run full vault scan — walk vault, `upsert_note` with `dirty=1` for every `.md` file, then start `IndexWorker`.
+  - Show a non-blocking status bar message "Indexing vault… N/M" while `IndexWorker` is running, using `IndexWorker.progress` signal. Dismiss on `finished`.
+  - On `IndexWorker.error`: log warning, continue (indexing is best-effort, never blocks recording).
+
+- [ ] **T-I05** `tests/test_vault_index.py` — unit tests with `tmp_path`: schema creation, `upsert_note` + `get_dirty_notes`, `upsert_edge` + `get_all_edges`, `delete_outgoing_edges`, transaction rollback on error.
+
+- [ ] **T-I06** `tests/test_index_worker.py` — unit tests: batch processing marks notes clean, `stop()` exits cleanly mid-batch, error in one note does not abort the batch.
+
+---
+
+## Phase 24 — Graph Connection Rendering
+
+> Consumes the data produced by Phases 22–23. No new UI tokens — uses `DOMAIN_PALETTE` and `CANVAS_*` tokens from T-G01.
+
+- [ ] **T-R01** `echos/core/connection_resolver.py` — `ConnectionResolver`:
+  - `resolve(vault_index: VaultIndex) -> tuple[list[NodeData], list[EdgeData]]`
+  - `NodeData`: `id`, `path`, `label` (filename without extension), `domain` (primary domain from fingerprint), `color` (from `DOMAIN_PALETTE` by domain index), `dir_id` (parent directory path).
+  - `EdgeData`: `source`, `target`, `strength` (0.0–1.0), `edge_type` (one of `"concept"`, `"vector"`, `"wikilink"`), `reason`.
+  - Edge type resolution rules:
+    - `"wikilink"`: note body contains `[[target-name]]` literal.
+    - `"concept"`: two notes share ≥1 concept label in their fingerprints.
+    - `"vector"`: cosine similarity of stored vectors ≥ 0.8 (and not already a concept edge).
+  - For multi-type connections between the same pair: keep the highest-priority type (wikilink > concept > vector) as the single edge, store as the edge_type.
+  - `strength` for concept edges = shared concept count / max(total concepts in either note). For vector edges = cosine similarity value. For wikilink edges = 1.0.
+
+- [ ] **T-R02** `echos/assets/graph.html` — update edge rendering to match the three visual types:
+  - `"concept"` → solid stroke, 1.5px, domain colour at 60% opacity.
+  - `"vector"` → `stroke-dasharray: 4,3`, 1px, `rgba(220,218,207,0.6)` (`BORDER`-equivalent).
+  - `"wikilink"` → solid, 2px, `#c2410c` (`ACCENT`), with an SVG `<marker>` arrowhead (6×4px triangle, same colour).
+  - Opacity animated: transition on `stroke-opacity` when `strength` changes (200ms ease).
+  - Node colour: set by `data.color` field passed from `ConnectionResolver`.
+
+- [ ] **T-R03** `echos/assets/graph.html` — node domain-colour grouping:
+  - Nodes receive `fill` from `data.color` (one of `DOMAIN_PALETTE` colours).
+  - A subtle drop-shadow filter on hovered node (`filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4))`).
+  - Directory hull polygon fill uses the most common domain colour among its children at 8% opacity + `BORDER`-equivalent stroke.
+
+- [ ] **T-R04** `echos/app.py` — wire `ConnectionResolver` into graph view:
+  - `_on_graph_view_requested()` calls `ConnectionResolver.resolve(vault_index)`, passes result to `graph_canvas.set_graph_data(nodes, edges)`.
+  - Data is recomputed each time the graph view is opened (cheap — just reads from SQLite).
+
+- [ ] **T-R05** `tests/test_connection_resolver.py` — unit tests: wikilink detection, concept-overlap strength formula, vector-similarity threshold, multi-type deduplication (wikilink wins), empty vault returns empty lists.
