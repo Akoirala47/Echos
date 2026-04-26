@@ -67,7 +67,7 @@ def _md_to_html(text: str) -> str:
             text,
             extensions=["fenced_code", "tables", "nl2br"],
         )
-    except ImportError:
+    except Exception:
         import html
         body = f"<pre>{html.escape(text)}</pre>"
     try:
@@ -171,16 +171,24 @@ class NotesPanel(QWidget):
 
     def set_notes(self, markdown: str) -> None:
         """Replace the notes content entirely (called when generation is complete)."""
-        self._raw_markdown = markdown
-        self._browser.setHtml(_md_to_html(markdown))
-        self._raw_edit.setPlainText(markdown)
-        self._regen_btn.setEnabled(True)
+        try:
+            self._raw_markdown = markdown
+            self._browser.setHtml(_md_to_html(markdown))
+            self._raw_edit.setPlainText(markdown)
+            self._regen_btn.setEnabled(True)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("set_notes failed")
 
     def append_chunk(self, text: str) -> None:
         """Append a streaming fragment and re-render."""
-        self._raw_markdown += text
-        self._browser.setHtml(_md_to_html(self._raw_markdown))
-        self._raw_edit.setPlainText(self._raw_markdown)
+        try:
+            self._raw_markdown += text
+            self._browser.setHtml(_md_to_html(self._raw_markdown))
+            self._raw_edit.setPlainText(self._raw_markdown)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("append_chunk failed")
 
     def get_notes(self) -> str:
         """Return the current notes (raw edit takes precedence if in raw view)."""

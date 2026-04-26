@@ -77,6 +77,8 @@ class NotesWorker(QThread):
             full = ""
             for chunk in response:
                 text = chunk.text
+                if not text:
+                    continue
                 full += text
                 self.chunk_ready.emit(text)
 
