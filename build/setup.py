@@ -137,8 +137,11 @@ OPTIONS = {
     # Embed the Python framework inside the .app bundle.
     "semi_standalone": False,
     "site_packages": True,
-    # Bundle libsndfile.dylib into Contents/Frameworks so soundfile can load
-    # it without the user needing `brew install libsndfile`.
+    # Do not zip Python packages — soundfile's bundled libsndfile_arm64.dylib
+    # must live on the real filesystem (dlopen cannot open paths inside a zip).
+    "no_zip": True,
+    # Bundle libsndfile.dylib into Contents/Frameworks so soundfile can find
+    # it even when no_zip is not fully honoured by the installed py2app.
     "frameworks": _find_libsndfile(),
 }
 
