@@ -6,7 +6,7 @@
 
 **Echos** is a native macOS app that turns your lectures into structured Obsidian notes.
 
-It transcribes your microphone locally using [Whisper large-v3](https://huggingface.co/openai/whisper-large-v3) — running entirely on Apple Silicon via Metal Performance Shaders — then sends the transcript to Gemma 4 31B (via Google AI) to produce clean, formatted markdown notes. Notes are saved directly into your Obsidian vault with YAML front matter injected automatically.
+It transcribes your microphone locally using [Whisper large-v3](https://huggingface.co/openai/whisper-large-v3), running entirely on Apple Silicon via Metal Performance Shaders, then sends the transcript to Gemma 4 31B (via Google AI) to produce clean, formatted markdown notes. Notes are saved directly into your Obsidian vault with YAML front matter injected automatically.
 
 **Your audio never leaves your Mac.**
 
