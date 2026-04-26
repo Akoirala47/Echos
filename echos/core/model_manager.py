@@ -186,6 +186,10 @@ class ModelManager:
             return_tensors="pt",
         ).to(self._device)
 
+        # Match input dtype to model dtype (float16 on MPS, float32 on CPU).
+        model_dtype = torch.float16 if self._device == "mps" else torch.float32
+        inputs["input_features"] = inputs["input_features"].to(model_dtype)
+
         with torch.no_grad():
             generated_ids = self._model.generate(
                 inputs["input_features"],
