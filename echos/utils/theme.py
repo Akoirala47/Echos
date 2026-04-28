@@ -55,6 +55,31 @@ def hover_bg()       -> str: return HOVER
 def selected_bg()    -> str: return SELECTED_STRONG
 
 
+# ── Graph canvas (Brain View) ─────────────────────────────────────────────────
+CANVAS_BG          = "#f0ede4"   # warm parchment canvas (matches SIDEBAR_BG family)
+CANVAS_NODE_DEFAULT = "#b0ae9e"  # muted warm node fill on light bg
+CANVAS_EDGE_STRONG = ACCENT      # strong/wikilink edges
+CANVAS_EDGE_WEAK   = BORDER      # weak/vector similarity edges
+CANVAS_LABEL       = TEXT_FAINT  # node label text
+
+# Warm + muted 6-colour domain palette (used for concept clusters)
+DOMAIN_PALETTE = [
+    "#c2410c",  # burnt orange  (accent)
+    "#1c8b4a",  # sage green
+    "#1d4ed8",  # cobalt blue
+    "#be185d",  # rose
+    "#b45309",  # amber
+    "#7c3aed",  # warm violet
+]
+
+def canvas_bg()           -> str: return CANVAS_BG
+def canvas_node_default() -> str: return CANVAS_NODE_DEFAULT
+def canvas_edge_strong()  -> str: return CANVAS_EDGE_STRONG
+def canvas_edge_weak()    -> str: return CANVAS_EDGE_WEAK
+def canvas_label()        -> str: return CANVAS_LABEL
+def domain_palette()      -> list: return list(DOMAIN_PALETTE)
+
+
 # ── Tab bar ───────────────────────────────────────────────────────────────────
 TAB_BG               = WINDOW_BG    # tab bar background
 TAB_ACTIVE_TEXT      = TEXT         # active tab label colour

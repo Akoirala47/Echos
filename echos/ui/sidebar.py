@@ -546,13 +546,14 @@ class _TopicRow(QWidget):
 class SidebarWidget(QWidget):
     """Left sidebar: vault tree + topics."""
 
-    course_selected      = pyqtSignal(dict)
-    course_added         = pyqtSignal(dict)
-    course_deleted       = pyqtSignal(str)
-    courses_reordered    = pyqtSignal(list)
-    settings_clicked     = pyqtSignal()
+    course_selected       = pyqtSignal(dict)
+    course_added          = pyqtSignal(dict)
+    course_deleted        = pyqtSignal(str)
+    courses_reordered     = pyqtSignal(list)
+    settings_clicked      = pyqtSignal()
     vault_folder_selected = pyqtSignal(str)
-    note_selected        = pyqtSignal(str)   # emits str(Path) of .md file
+    note_selected         = pyqtSignal(str)   # emits str(Path) of .md file
+    graph_view_requested  = pyqtSignal()       # vault icon clicked → show graph
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -575,9 +576,19 @@ class SidebarWidget(QWidget):
 
     def _build_ui(self) -> None:
         # ── Vault header ──────────────────────────────────────────────────────
-        vault_icon = QLabel()
-        vault_icon.setFixedSize(14, 14)
-        vault_icon.setPixmap(_folder_icon(14, "#7e6e57", "#5e5040").pixmap(14, 14))
+        # The vault icon is a clickable button that opens the Brain View (graph).
+        vault_icon_btn = QPushButton()
+        vault_icon_btn.setFixedSize(18, 18)
+        vault_icon_btn.setFlat(True)
+        vault_icon_btn.setToolTip("Open Brain View")
+        vault_icon_btn.setIcon(_folder_icon(14, "#7e6e57", "#5e5040"))
+        vault_icon_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none; padding: 2px; "
+            "border-radius: 4px; }"
+            "QPushButton:hover { background: rgba(255,255,255,0.06); }"
+        )
+        vault_icon_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        vault_icon_btn.clicked.connect(self.graph_view_requested)
 
         self._vault_name_lbl = QLabel("No vault")
         self._vault_name_lbl.setStyleSheet(
@@ -596,7 +607,7 @@ class SidebarWidget(QWidget):
         vhr = QHBoxLayout(vault_hdr)
         vhr.setContentsMargins(12, 0, 12, 0)
         vhr.setSpacing(7)
-        vhr.addWidget(vault_icon, 0, Qt.AlignmentFlag.AlignVCenter)
+        vhr.addWidget(vault_icon_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         vhr.addWidget(self._vault_name_lbl, 1)
         vhr.addWidget(self._vault_path_lbl)
 

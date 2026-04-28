@@ -393,9 +393,9 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
 
 > Background `CANVAS_BG = "#1c1b17"` (add to `theme.py`). All overlay UI uses standard warm tokens on `PANEL_BG` cards. Transitions: 150ms opacity fade for UI elements, spring-physics settle for force simulation.
 
-- [ ] **T-G01** `echos/utils/theme.py` — Add `CANVAS_BG = "#1c1b17"`, `CANVAS_NODE_DEFAULT = "#f6f5f1"`, `CANVAS_EDGE_STRONG = ACCENT`, `CANVAS_EDGE_WEAK = BORDER`, `CANVAS_LABEL = TEXT_FAINT`. Graph domain-cluster palette (6 colours, warm + muted tones): add as `DOMAIN_PALETTE = [...]` list.
+- [x] **T-G01** `echos/utils/theme.py` — Add `CANVAS_BG = "#1c1b17"`, `CANVAS_NODE_DEFAULT = "#f6f5f1"`, `CANVAS_EDGE_STRONG = ACCENT`, `CANVAS_EDGE_WEAK = BORDER`, `CANVAS_LABEL = TEXT_FAINT`. Graph domain-cluster palette (6 colours, warm + muted tones): add as `DOMAIN_PALETTE = [...]` list.
 
-- [ ] **T-G02** `echos/assets/graph.html` — Self-contained D3 v7 force-directed graph page (D3 vendored into `echos/assets/vendor/`):
+- [x] **T-G02** `echos/assets/graph.html` — Self-contained D3 v7 force-directed graph page (D3 vendored into `echos/assets/vendor/`):
   - Canvas background `CANVAS_BG`. Dot-grid overlay (subtle, 20px spacing, `rgba(255,255,255,0.04)` dots).
   - **File nodes**: circles (r=7), filled by primary domain colour from `DOMAIN_PALETTE`. Label below node in 11px `TEXT_FAINT`-equivalent (`#a09e93`). On hover: grow to r=9 (150ms ease), show tooltip card (filename + fingerprint concepts) on `PANEL_BG` (`#ffffff`) with `BORDER_SOFT` border + `TEXT` text.
   - **Directory regions**: convex hulls (`d3.polygonHull`) drawn as filled polygons (`CANVAS_BG` +8% lightness fill, `BORDER`-equivalent stroke `rgba(220,218,207,0.3)`). Directory name label in 10px uppercase `TEXT_FAINT`-equivalent. Not clickable.
@@ -405,7 +405,7 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
   - **JS API** (via `QWebChannel`): `loadGraph(data)` — accepts `{nodes: [...], edges: [...]}` JSON; `expandDirectory(dirId)` — triggers fractal expansion; `collapseDirectory(dirId)`.
   - `window.echosBridge` callbacks: `onNodeClicked(filePath)`, `onReady()`.
 
-- [ ] **T-G03** `echos/assets/graph.html` (fractal expansion):
+- [x] **T-G03** `echos/assets/graph.html` (fractal expansion):
   - Collapsed directories show as a single dim cluster node. Clicking a directory node calls `expandDirectory`.
   - Children spawn at parent centroid position with zero velocity + outward radial impulse (angle = 2π × i/n + jitter).
   - Opacity transition 0→1 over 300ms (CSS transition on the SVG elements).
@@ -413,7 +413,7 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
   - Collapse: children fade out (opacity 1→0, 200ms), then are removed from the DOM + simulation.
   - Directory hull polygon redraws live as nodes move (re-computed on each `tick`).
 
-- [ ] **T-G04** `echos/ui/graph_canvas.py` — `GraphCanvasWidget(QWidget)`:
+- [x] **T-G04** `echos/ui/graph_canvas.py` — `GraphCanvasWidget(QWidget)`:
   - Wraps `QWebEngineView` loading `echos/assets/graph.html`.
   - `QWebChannel` bridge: `EchosGraphBridge(QObject)` with `node_clicked(path: str)` signal and `load_graph(json_str: str)` slot.
   - `set_graph_data(nodes: list, edges: list)` — serialises to JSON, calls `loadGraph` via JS.
@@ -421,24 +421,25 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
   - Toolbar overlay (floating `QWidget` atop the web view, top-left): "← Back" ghost button (`PANEL_BG` bg, `BORDER_SOFT` border, `TEXT` text, 6px radius, 8px padding). Clicking emits `back_requested`.
   - Toolbar also shows vault name label (`TEXT_FAINT`, 11px) and a search field (`PANEL_BG`, `BORDER_SOFT` border, `TEXT` placeholder) that filters visible nodes by name.
 
-- [ ] **T-G05** `echos/ui/main_window.py` + `echos/ui/sidebar.py` — wire graph view transition:
+- [x] **T-G05** `echos/ui/main_window.py` + `echos/ui/sidebar.py` — wire graph view transition:
   - Sidebar vault-name header now has the vault icon as a clickable button. Clicking it emits `graph_view_requested`.
   - `MainWindow` stacks `GraphCanvasWidget` over the tab layout (using `QStackedWidget` or `raise_()`). Show on `graph_view_requested`, hide on `GraphCanvasWidget.back_requested`.
   - Transition: fade in/out using `QGraphicsOpacityEffect` + `QPropertyAnimation` (150ms).
 
-- [ ] **T-G06** `echos/app.py` — wire graph data:
+- [x] **T-G06** `echos/app.py` — wire graph data:
   - `_on_graph_view_requested()` — pulls nodes + edges from `VaultIndex`, calls `graph_canvas.set_graph_data(...)`. Show only indexed files; unindexed files shown as grey placeholder nodes.
   - `_on_graph_node_clicked(path)` — calls `tab_manager.open_file(path)`, hides graph view.
 
-- [ ] **T-G07** `tests/test_graph_canvas.py` — unit tests: `set_graph_data` serialises correctly, back button emits `back_requested`, node-click signal propagates.
+- [x] **T-G07** `tests/test_graph_canvas.py` — unit tests: `set_graph_data` serialises correctly, back button emits `back_requested`, node-click signal propagates.
+
 
 ---
 
 ## Phase 22 — Fingerprint System
 
-- [ ] **T-F01** `echos/utils/theme.py` — No new UI tokens needed for this phase.
+- [x] **T-F01** `echos/utils/theme.py` — No new UI tokens needed for this phase.
 
-- [ ] **T-F02** `echos/core/fingerprint.py` — `FingerprintEngine`:
+- [x] **T-F02** `echos/core/fingerprint.py` — `FingerprintEngine`:
   - `generate(note_body: str, existing_fingerprints: list[str], api_key: str, model_id: str) -> Fingerprint`
   - `Fingerprint` dataclass: `concepts: list[str]` (5–8 terms), `domains: list[str]` (2–3 broad clusters), `content_hash: str` (first 4 chars of SHA-256 of note body).
   - `to_string() -> str` — encodes as `"concepts:[a,b,c] | domain:[x,y] | hash:ab3f"` (≤100 chars).
@@ -447,29 +448,29 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
   - Pre-filter: before calling the LLM, `EmbeddingEngine.top_k_similar(concepts_string, k=20)` narrows which fingerprints to pass (see T-F03). If vault has ≤30 notes, skip pre-filter and pass all.
   - Vocabulary guard: if a new concept term would push the unique concept count beyond 200, attempt consolidation via a second LLM call (merge near-synonyms) before accepting the new term.
 
-- [ ] **T-F03** `echos/core/embeddings.py` — `EmbeddingEngine`:
+- [x] **T-F03** `echos/core/embeddings.py` — `EmbeddingEngine`:
   - Uses `sentence-transformers/all-MiniLM-L6-v2` (22 MB) via the `sentence-transformers` package.
   - `embed(text: str) -> np.ndarray` — returns 384-dim float32 vector.
   - `top_k_similar(query_text: str, k: int) -> list[str]` — loads all stored vectors from `VaultIndex`, computes cosine similarity, returns top-k note IDs.
   - Model is loaded lazily on first call and cached in memory. Emits a `QThread` signal if loaded on first use so the UI can show a status indicator.
   - Handles `ImportError` gracefully if `sentence-transformers` is not installed — falls back to passing all fingerprints (no pre-filter).
 
-- [ ] **T-F04** `echos/core/notes_worker.py` — extend post-generation pipeline:
+- [x] **T-F04** `echos/core/notes_worker.py` — extend post-generation pipeline:
   - After `done` signal is assembled, trigger `FingerprintEngine.generate(...)` in the same worker thread.
   - Inject the fingerprint into the note's YAML frontmatter via `inject_frontmatter` (update `echos/utils/frontmatter.py` to accept an optional `fingerprint: str` kwarg).
   - Emit the updated note body (with fingerprint in frontmatter) via the existing `done` signal — callers receive the fingerprint-annotated note transparently.
 
-- [ ] **T-F05** `echos/utils/frontmatter.py` — add `fingerprint` field to YAML block:
+- [x] **T-F05** `echos/utils/frontmatter.py` — add `fingerprint` field to YAML block:
   - If `fingerprint` kwarg is provided, append `fingerprint: "{fingerprint_string}"` line to the YAML block.
   - Existing callers not passing `fingerprint` are unaffected (default `None`).
 
-- [ ] **T-F06** `tests/test_fingerprint.py` — unit tests: `Fingerprint.to_string` / `from_string` roundtrip, compact string ≤100 chars, vocabulary guard triggers consolidation at 201 concepts, pre-filter skipped for ≤30 notes.
+- [x] **T-F06** `tests/test_fingerprint.py` — unit tests: `Fingerprint.to_string` / `from_string` roundtrip, compact string ≤100 chars, vocabulary guard triggers consolidation at 201 concepts, pre-filter skipped for ≤30 notes.
 
 ---
 
 ## Phase 23 — Indexing System
 
-- [ ] **T-I01** `echos/core/vault_index.py` — `VaultIndex`:
+- [x] **T-I01** `echos/core/vault_index.py` — `VaultIndex`:
   - SQLite database at `{vault_root}/.echoes/vault.index.db`. Creates `.echoes/` on first use.
   - Schema:
     - `notes(id TEXT PK, path TEXT UNIQUE, modified_at REAL, content_hash TEXT, fingerprint_text TEXT, vector_blob BLOB, dirty INTEGER DEFAULT 0)`
@@ -478,7 +479,7 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
   - Methods: `upsert_note(...)`, `set_dirty(path)`, `get_dirty_notes() -> list`, `upsert_edge(...)`, `delete_outgoing_edges(note_id)`, `get_edges(note_id) -> list`, `get_all_nodes() -> list`, `get_all_edges() -> list`, `clear_index()`.
   - All writes are wrapped in transactions. Connection is kept open for the process lifetime (single `sqlite3.Connection`, thread-lock protected).
 
-- [ ] **T-I02** `echos/core/index_worker.py` — `IndexWorker(QThread)`:
+- [x] **T-I02** `echos/core/index_worker.py` — `IndexWorker(QThread)`:
   - Signals: `progress(done: int, total: int)`, `note_indexed(path: str)`, `error(msg: str)`, `finished()`.
   - Constructor: `vault_index: VaultIndex`, `embedding_engine: EmbeddingEngine`, `fingerprint_engine: FingerprintEngine`.
   - `run()`: process `vault_index.get_dirty_notes()` in batches of 20–30. For each batch:
@@ -489,21 +490,21 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
     5. Set `dirty=0` on the note, emit `note_indexed`.
   - Slots: `stop()` — sets a threading.Event; worker exits cleanly after finishing the current batch.
 
-- [ ] **T-I03** `echos/core/vault_watcher.py` — extend existing `VaultWatcher`:
+- [x] **T-I03** `echos/core/vault_watcher.py` — extend existing `VaultWatcher`:
   - On file change event: call `vault_index.set_dirty(path)` and enqueue for re-indexing.
   - Debounce: coalesce rapid saves (e.g. 10 saves in 2s) — only enqueue once after a 30s quiet period using a `QTimer` one-shot.
   - On file delete: remove the note row and all its edges from the index.
   - `VaultWatcher` takes `vault_index: VaultIndex | None = None` in its constructor (backwards-compatible default).
 
-- [ ] **T-I04** `echos/app.py` — wire indexing into app lifecycle:
+- [x] **T-I04** `echos/app.py` — wire indexing into app lifecycle:
   - On vault path set / vault watcher start: instantiate `VaultIndex`, `EmbeddingEngine`, `FingerprintEngine`, `IndexWorker`.
   - On first launch (index missing or empty): run full vault scan — walk vault, `upsert_note` with `dirty=1` for every `.md` file, then start `IndexWorker`.
   - Show a non-blocking status bar message "Indexing vault… N/M" while `IndexWorker` is running, using `IndexWorker.progress` signal. Dismiss on `finished`.
   - On `IndexWorker.error`: log warning, continue (indexing is best-effort, never blocks recording).
 
-- [ ] **T-I05** `tests/test_vault_index.py` — unit tests with `tmp_path`: schema creation, `upsert_note` + `get_dirty_notes`, `upsert_edge` + `get_all_edges`, `delete_outgoing_edges`, transaction rollback on error.
+- [x] **T-I05** `tests/test_vault_index.py` — unit tests with `tmp_path`: schema creation, `upsert_note` + `get_dirty_notes`, `upsert_edge` + `get_all_edges`, `delete_outgoing_edges`, transaction rollback on error.
 
-- [ ] **T-I06** `tests/test_index_worker.py` — unit tests: batch processing marks notes clean, `stop()` exits cleanly mid-batch, error in one note does not abort the batch.
+- [x] **T-I06** `tests/test_index_worker.py` — unit tests: batch processing marks notes clean, `stop()` exits cleanly mid-batch, error in one note does not abort the batch.
 
 ---
 
@@ -511,7 +512,7 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
 
 > Consumes the data produced by Phases 22–23. No new UI tokens — uses `DOMAIN_PALETTE` and `CANVAS_*` tokens from T-G01.
 
-- [ ] **T-R01** `echos/core/connection_resolver.py` — `ConnectionResolver`:
+- [x] **T-R01** `echos/core/connection_resolver.py` — `ConnectionResolver`:
   - `resolve(vault_index: VaultIndex) -> tuple[list[NodeData], list[EdgeData]]`
   - `NodeData`: `id`, `path`, `label` (filename without extension), `domain` (primary domain from fingerprint), `color` (from `DOMAIN_PALETTE` by domain index), `dir_id` (parent directory path).
   - `EdgeData`: `source`, `target`, `strength` (0.0–1.0), `edge_type` (one of `"concept"`, `"vector"`, `"wikilink"`), `reason`.
@@ -522,20 +523,38 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
   - For multi-type connections between the same pair: keep the highest-priority type (wikilink > concept > vector) as the single edge, store as the edge_type.
   - `strength` for concept edges = shared concept count / max(total concepts in either note). For vector edges = cosine similarity value. For wikilink edges = 1.0.
 
-- [ ] **T-R02** `echos/assets/graph.html` — update edge rendering to match the three visual types:
+- [x] **T-R02** `echos/assets/graph.html` — update edge rendering to match the three visual types:
   - `"concept"` → solid stroke, 1.5px, domain colour at 60% opacity.
   - `"vector"` → `stroke-dasharray: 4,3`, 1px, `rgba(220,218,207,0.6)` (`BORDER`-equivalent).
   - `"wikilink"` → solid, 2px, `#c2410c` (`ACCENT`), with an SVG `<marker>` arrowhead (6×4px triangle, same colour).
   - Opacity animated: transition on `stroke-opacity` when `strength` changes (200ms ease).
   - Node colour: set by `data.color` field passed from `ConnectionResolver`.
 
-- [ ] **T-R03** `echos/assets/graph.html` — node domain-colour grouping:
+- [x] **T-R03** `echos/assets/graph.html` — node domain-colour grouping:
   - Nodes receive `fill` from `data.color` (one of `DOMAIN_PALETTE` colours).
   - A subtle drop-shadow filter on hovered node (`filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4))`).
   - Directory hull polygon fill uses the most common domain colour among its children at 8% opacity + `BORDER`-equivalent stroke.
 
-- [ ] **T-R04** `echos/app.py` — wire `ConnectionResolver` into graph view:
+- [x] **T-R04** `echos/app.py` — wire `ConnectionResolver` into graph view:
   - `_on_graph_view_requested()` calls `ConnectionResolver.resolve(vault_index)`, passes result to `graph_canvas.set_graph_data(nodes, edges)`.
   - Data is recomputed each time the graph view is opened (cheap — just reads from SQLite).
 
-- [ ] **T-R05** `tests/test_connection_resolver.py` — unit tests: wikilink detection, concept-overlap strength formula, vector-similarity threshold, multi-type deduplication (wikilink wins), empty vault returns empty lists.
+- [x] **T-R05** `tests/test_connection_resolver.py` — unit tests: wikilink detection, concept-overlap strength formula, vector-similarity threshold, multi-type deduplication (wikilink wins), empty vault returns empty lists.
+
+---
+
+## Phase 25 — Bug Fixes (BF-01 / BF-02 / BF-03)
+
+> See SPEC §9 for root-cause analysis and fix plans.
+
+- [ ] **T-X01** `echos/utils/markdown.py` — add `build_continuation_prompt()` for second-and-later transcript chunks: receives `session_name`, `session_num`, `date`, `transcript_chunk`, `chunk_idx`, `total_chunks`, `notes_tail` (last 400 chars of notes so far); instructs the model to extend, not repeat.
+
+- [ ] **T-X02** `echos/core/notes_worker.py` — chunked generation + stream thinking filter:
+  - Add `CHUNK_CHAR_LIMIT = 3_500` constant.
+  - Add `_split_transcript(text, limit) -> list[str]` splitting on `\n\n` then `. ` boundaries.
+  - Modify `run()`: iterate chunks; first uses `build_prompt`, rest use `build_continuation_prompt`; accumulate `full_notes`; emit `chunk_ready` only when no unclosed `<thinking>` block is present (delta computed via `_strip_thinking(full)[emitted_len:]`); emit `done` with total stripped notes after all chunks.
+
+- [ ] **T-X03** `echos/ui/notes_panel.py` + `echos/ui/editor_tab.py` — fix `_md_to_html()` in both files:
+  - Add `_strip_frontmatter(text) -> str` (strips `---` … `---` YAML block).
+  - Remove `"nl2br"` from the `markdown.markdown()` extensions list.
+  - Call `_strip_frontmatter()` before passing text to `markdown.markdown()`.

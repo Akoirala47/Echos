@@ -95,6 +95,13 @@ def main() -> None:
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QApplication
 
+    # QtWebEngineWidgets MUST be imported before QApplication is created on macOS.
+    # Without this, the import fails at module load time even if the package is installed.
+    try:
+        import PyQt6.QtWebEngineWidgets  # noqa: F401 — side-effect import, order matters
+    except ImportError:
+        pass  # Optional dependency — graph view shows fallback label if absent
+
     app = QApplication(sys.argv)
     app.setApplicationName("Echos")
     app.setOrganizationName("Echos")

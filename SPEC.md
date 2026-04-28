@@ -401,3 +401,50 @@ The sidebar becomes a two-section panel:
 - Warm parchment palette, no dark-mode branching.
 - All colours hardcoded from the mockup CSS variables (see `echos/utils/theme.py`).
 - Fusion Qt style + custom QPalette so every native widget matches.
+
+---
+
+## 9. Bug Fix Log (Phase 25)
+
+### BF-01 — Chunked Notes Generation (API 500 on long transcripts)
+
+**Root cause**: The Google Generative AI API returns HTTP 500 when a single request exceeds ≈1 000 tokens. Lecture sessions longer than 10–15 minutes routinely produce transcripts in the 1 500–4 000+ token range, making note generation fail entirely for any non-trivial session.
+
+**Fix plan**:
+- Add `CHUNK_CHAR_LIMIT = 3_500` constant in `NotesWorker` (≈875 tokens, safely below the 1 000-token threshold).
+- Add `_split_transcript(text, limit) -> list[str]` that partitions on double-newline (`\n\n`) boundaries, falling back to the last `. ` within the window when no paragraph break is found.
+- For the **first chunk** use `build_prompt()` unchanged.
+- For **subsequent chunks** use a new `build_continuation_prompt()` that passes the last 400 chars of accumulated notes as context so the AI continues coherently rather than starting fresh.
+- In `NotesWorker.run()`: iterate over chunks, accumulate `full_notes`, stream each chunk's response through `chunk_ready`, then emit `done` once all chunks are processed.
+- `fingerprint_engine.generate()` is called once on the entire `full_notes` at the end.
+
+**Files changed**: `echos/core/notes_worker.py`, `echos/utils/markdown.py`.
+
+---
+
+### BF-02 — Thinking Blocks Visible During Streaming
+
+**Root cause**: `_strip_thinking()` is applied only to the final `done` payload. While the API streams, `<thinking>…</thinking>` blocks are emitted verbatim via `chunk_ready`, rendering the model's internal reasoning in the notes panel.
+
+**Fix plan**:
+- Track `open_count`/`close_count` of `<thinking|thought>` tags seen so far during streaming.
+- Only call `self.chunk_ready.emit(delta)` when tags are balanced (no unclosed thinking block).
+- The "delta" is computed as `_strip_thinking(full)[emitted_len:]` on each iteration, so the panel never shows thinking fragments.
+- No change to `_strip_thinking()` itself or the `done` path.
+
+**Files changed**: `echos/core/notes_worker.py`.
+
+---
+
+### BF-03 — Preview Renders Raw Markdown Instead of HTML
+
+**Root cause**: Two compounding bugs in `_md_to_html()`:
+1. The `nl2br` extension converts all `\n` to `<br>` *before* block-level parsing. This breaks list detection, heading detection, and fenced-code parsing — every `*` item and `##` heading renders as literal text with a `<br>` after it.
+2. YAML frontmatter (`---` … `---`) is passed straight to the markdown renderer, which turns each `---` into `<hr>` and renders the YAML key-value pairs as paragraph text.
+
+**Fix plan**:
+- Add `_strip_frontmatter(text) -> str` helper: if `text` starts with `---`, find the next `\n---` occurrence and drop everything up to and including it.
+- Remove `"nl2br"` from the extensions list in `_md_to_html()`.
+- Apply both fixes to the `_md_to_html()` function in **both** `echos/ui/notes_panel.py` and `echos/ui/editor_tab.py` (they share identical implementations).
+
+**Files changed**: `echos/ui/notes_panel.py`, `echos/ui/editor_tab.py`.

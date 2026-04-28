@@ -41,16 +41,27 @@ logger = logging.getLogger(__name__)
 _MODE = Literal["preview", "raw", "edit"]
 
 
+def _strip_frontmatter(text: str) -> str:
+    """Remove YAML frontmatter block (--- ... ---) if present."""
+    if not text.startswith('---'):
+        return text
+    end = text.find('\n---', 3)
+    if end == -1:
+        return text
+    return text[end + 4:].lstrip('\n')
+
+
 def _md_to_html(md_text: str) -> str:
+    body_src = _strip_frontmatter(md_text)
     try:
         import markdown
         body = markdown.markdown(
-            md_text,
-            extensions=["fenced_code", "tables", "nl2br"],
+            body_src,
+            extensions=["fenced_code", "tables"],
         )
     except Exception:
         import html
-        body = f"<pre>{html.escape(md_text)}</pre>"
+        body = f"<pre>{html.escape(body_src)}</pre>"
     css = notes_css()
     return f"<html><head><style>{css}</style></head><body>{body}</body></html>"
 
