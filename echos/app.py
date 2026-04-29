@@ -11,13 +11,9 @@ from PyQt6.QtWidgets import QMessageBox
 
 from echos.config.config_manager import ConfigManager
 from echos.core.audio_worker import AudioWorker
-from echos.core.embeddings import EmbeddingEngine
-from echos.core.fingerprint import FingerprintEngine
-from echos.core.index_worker import IndexWorker
 from echos.core.model_manager import ModelDownloadWorker, ModelManager
 from echos.core.notes_worker import NotesWorker
 from echos.core.obsidian_manager import ObsidianManager
-from echos.core.vault_index import VaultIndex
 from echos.ui.main_window import MainWindow
 from echos.ui.onboarding import OnboardingWizard
 from echos.ui.settings_window import SettingsWindow
@@ -72,12 +68,6 @@ class AppController:
         self._transcript_processed_up_to: int = 0  # chars already sent to auto-gen
         self._auto_gen_in_progress: bool = False
 
-        # Phase 22/23 — vault indexing (created lazily when vault path is set)
-        self._vault_index: VaultIndex | None = None
-        self._embedding_engine: EmbeddingEngine | None = None
-        self._fingerprint_engine: FingerprintEngine | None = None
-        self._index_worker: IndexWorker | None = None
-
         # macOS power assertion token (None on non-macOS)
         self._power_assertion = None
 
@@ -99,13 +89,9 @@ class AppController:
         w.sidebar.settings_clicked.connect(self._on_settings)
         w.sidebar.vault_folder_selected.connect(self._on_vault_folder_selected)
         w.sidebar.note_selected.connect(self._on_note_selected)
-        w.sidebar.graph_view_requested.connect(self._on_graph_view_requested)
+        w.sidebar.file_deleted.connect(self._on_file_deleted)
+        w.sidebar.file_renamed.connect(self._on_file_renamed)
         w.record_bar.breadcrumb_clicked.connect(self._on_breadcrumb_clicked)
-
-        # Graph canvas
-        w.graph_canvas.back_requested.connect(self._on_graph_back)
-        w.graph_canvas.node_clicked.connect(self._on_graph_node_clicked)
-        w.brain_view_action.triggered.connect(self._on_graph_view_requested)
 
         # Record bar — primary cycles Start/Pause/Resume; no Stop button
         w.record_bar.record_clicked.connect(self._on_record_clicked)
@@ -130,6 +116,7 @@ class AppController:
         )
         w.model_status_action.triggered.connect(self._on_model_status)
         w.open_log_action.triggered.connect(self._on_open_log)
+        w.command_palette_action.triggered.connect(self._on_command_palette)
 
         # Keyboard shortcuts per SPEC addendum §A:
         #   ⌘R  → Start (IDLE) or Resume (PAUSED) only
@@ -154,7 +141,6 @@ class AppController:
         self._window.sidebar.load_courses(courses)
         if vault:
             self._window.sidebar.set_vault_path(vault)
-            self._init_vault_index(vault)
 
         # Disable generate button until recording stops.
         self._window.notes_panel.set_generate_enabled(False)
@@ -311,159 +297,20 @@ class AppController:
 
     def _on_note_selected(self, path_str: str) -> None:
         """User clicked a .md file in the vault tree — open in a new editor tab."""
-        self._window.tab_manager.open_file(path_str)
+        vault_root = self._config.get("vault_path", "")
+        self._window.tab_manager.open_file(path_str, vault_root=vault_root)
+
+    def _on_file_deleted(self, path: str) -> None:
+        """Vault file deleted from sidebar — close any open editor tab for it."""
+        self._window.tab_manager.close_tabs_for_path(path)
+
+    def _on_file_renamed(self, old_path: str, new_path: str) -> None:
+        """Vault file renamed from sidebar — update open editor tab if present."""
+        self._window.tab_manager.rename_tab_path(old_path, new_path)
 
     def _on_breadcrumb_clicked(self, folder_path: str) -> None:
         """User clicked a breadcrumb segment — scroll the sidebar tree to that folder."""
         self._window.sidebar.scroll_to_folder(folder_path)
-
-    # ------------------------------------------------------------------
-    # Graph / Brain View
-    # ------------------------------------------------------------------
-
-    def _on_graph_view_requested(self) -> None:
-        """Show the graph canvas and populate it with vault data.
-
-        Disk is the source of truth for the file/dir structure — the SQLite
-        index can lag behind file deletions and would otherwise surface stale
-        nodes for files that no longer exist. Concept/vector edges and per-note
-        fingerprints from the index are merged in for files that are still
-        on disk.
-        """
-        vault_path = self._config.get("vault_path", "")
-        vault_name = Path(vault_path).name if vault_path else "Vault"
-
-        # Always walk the disk first for current truth.
-        nodes, edges = self._build_graph_data(vault_path)
-
-        # Drop wikilink/edge entries pointing at notes that no longer exist.
-        node_ids = {n["id"] for n in nodes}
-        edges = [
-            e for e in edges
-            if e.get("source") in node_ids and e.get("target") in node_ids
-        ]
-
-        # Enrich with concept/vector edges and fingerprints from the index,
-        # but only for nodes that still exist on disk.
-        if self._vault_index is not None:
-            try:
-                from dataclasses import asdict
-                from echos.core.connection_resolver import ConnectionResolver
-                raw_nodes, raw_edges = ConnectionResolver.resolve(self._vault_index)
-
-                fp_by_id = {rn.id: rn.fingerprint for rn in raw_nodes if rn.fingerprint}
-                color_by_id = {rn.id: rn.color for rn in raw_nodes}
-                for n in nodes:
-                    if n["kind"] == "file" and n["id"] in fp_by_id:
-                        n["fingerprint"] = fp_by_id[n["id"]]
-                    if n["id"] in color_by_id:
-                        n["color"] = color_by_id[n["id"]]
-
-                # Append non-wikilink edges (concept / vector) that the disk
-                # walker doesn't know about.
-                seen = {(e.get("source"), e.get("target")) for e in edges}
-                for re in raw_edges:
-                    re_d = asdict(re)
-                    pair = (re_d["source"], re_d["target"])
-                    if pair in seen or (pair[1], pair[0]) in seen:
-                        continue
-                    if re_d["source"] in node_ids and re_d["target"] in node_ids:
-                        edges.append(re_d)
-                        seen.add(pair)
-            except Exception as exc:
-                logger.warning("ConnectionResolver enrichment failed: %s", exc)
-
-        self._window.graph_canvas.set_vault_name(vault_name)
-        self._window.graph_canvas.set_graph_data(nodes, edges)
-        self._window.show_graph_view()
-
-    def _on_graph_back(self) -> None:
-        """Back button in graph toolbar — return to tab view."""
-        self._window.hide_graph_view()
-
-    def _on_graph_node_clicked(self, path: str) -> None:
-        """Node clicked in graph — open in editor tab and hide graph."""
-        if path and Path(path).exists():
-            self._window.tab_manager.open_file(path)
-        self._window.hide_graph_view()
-
-    def _build_graph_data(self, vault_path: str) -> tuple[list, list]:
-        """Build node+edge list from VaultIndex when available, else by walking disk."""
-        from echos.utils.theme import DOMAIN_PALETTE
-
-        nodes: list[dict] = []
-        edges: list[dict] = []
-
-        if not vault_path:
-            return nodes, edges
-
-        vault_root = Path(vault_path)
-        if not vault_root.is_dir():
-            return nodes, edges
-
-        # ── Fast path: use VaultIndex data if available ──────────────────────
-        if self._vault_index is not None:
-            try:
-                db_edges = self._vault_index.get_all_edges()
-                edges = [
-                    {
-                        "source": e["source_id"],
-                        "target": e["target_id"],
-                        "strength": e["strength"],
-                        "edge_type": e["edge_type"],
-                        "reason": e.get("reason", ""),
-                    }
-                    for e in db_edges
-                ]
-            except Exception:
-                pass
-
-        # Walk up to 4 levels deep
-        _domain_idx: dict[str, int] = {}
-
-        def _color_for_dir(dir_name: str) -> str:
-            if dir_name not in _domain_idx:
-                _domain_idx[dir_name] = len(_domain_idx) % len(DOMAIN_PALETTE)
-            return DOMAIN_PALETTE[_domain_idx[dir_name]]
-
-        def _walk(root: Path, max_depth: int = 4, depth: int = 0) -> None:
-            if depth > max_depth:
-                return
-            try:
-                entries = sorted(root.iterdir(), key=lambda e: (e.is_file(), e.name.lower()))
-            except PermissionError:
-                return
-
-            for entry in entries:
-                if entry.name.startswith(".") or entry.name in ("__pycache__", ".obsidian"):
-                    continue
-                if entry.is_dir():
-                    dir_id = str(entry.relative_to(vault_root))
-                    nodes.append({
-                        "id":    dir_id,
-                        "path":  str(entry),
-                        "label": entry.name,
-                        "kind":  "dir",
-                        "dir_id": str(entry.parent.relative_to(vault_root))
-                                  if entry.parent != vault_root else None,
-                        "color": _color_for_dir(entry.name),
-                    })
-                    _walk(entry, max_depth, depth + 1)
-                elif entry.suffix.lower() == ".md":
-                    file_id = str(entry.relative_to(vault_root))
-                    parent_dir_id = str(entry.parent.relative_to(vault_root))
-                    nodes.append({
-                        "id":          file_id,
-                        "path":        str(entry),
-                        "label":       entry.stem,
-                        "kind":        "file",
-                        "dir_id":      parent_dir_id,
-                        "color":       _color_for_dir(entry.parent.name),
-                        "fingerprint": "",
-                    })
-
-        _walk(vault_root)
-        return nodes, edges
 
     # ------------------------------------------------------------------
     # Recording
@@ -690,17 +537,6 @@ class AppController:
         self._set_state(AppState.GENERATING)
         self._notes_fingerprint = ""
 
-        existing_fps: list[str] = []
-        if self._vault_index is not None:
-            try:
-                existing_fps = [
-                    n["fingerprint_text"]
-                    for n in self._vault_index.get_all_nodes()
-                    if n.get("fingerprint_text")
-                ]
-            except Exception:
-                pass
-
         self._notes_worker = NotesWorker(
             transcript=transcript,
             course_name=course.get("name", "Unknown"),
@@ -713,8 +549,6 @@ class AppController:
             custom_instruction=custom_instruction,
             is_continuation=is_continuation,
             existing_notes_tail=notes_tail,
-            fingerprint_engine=self._fingerprint_engine,
-            existing_fingerprints=existing_fps,
         )
         self._notes_worker.chunk_ready.connect(self._window.notes_panel.append_chunk)
         self._notes_worker.done.connect(self._on_notes_done)
@@ -852,6 +686,24 @@ class AppController:
     # Settings
     # ------------------------------------------------------------------
 
+    def _on_command_palette(self) -> None:
+        from echos.ui.command_palette import CommandPalette
+        vault_path = self._config.get("vault_path", "")
+        commands = [
+            ("New Recording",      self._on_new_recording),
+            ("Settings",           self._on_settings),
+            ("Save Note",          self._on_save),
+            ("End Session",        self._on_end_session_requested),
+            ("Toggle Transcript",  self._window.transcript_panel.setVisible
+                                   if hasattr(self._window, "transcript_panel") else lambda: None),
+        ]
+        palette = CommandPalette(vault_path, commands, parent=self._window)
+        vault_root = self._config.get("vault_path", "")
+        palette.file_selected.connect(
+            lambda p: self._window.tab_manager.open_file(p, vault_root=vault_root)
+        )
+        palette.exec()
+
     def _on_settings(self) -> None:
         dlg = SettingsWindow(self._config, self._model_manager, self._window)
         dlg.exec()
@@ -864,7 +716,6 @@ class AppController:
         self._window.status_bar_widget.set_vault_path(vault)
         if vault:
             self._window.sidebar.set_vault_path(vault)
-            self._init_vault_index(vault)
         new_device = self._config.get("inference_device", "auto")
         self._model_manager.set_device(new_device)
 
@@ -904,120 +755,6 @@ class AppController:
         self._window.status_bar_widget.set_status(
             "#E74C3C", f"Download failed: {message[:80]}"
         )
-
-    # ------------------------------------------------------------------
-    # Vault indexing (Phase 22/23)
-    # ------------------------------------------------------------------
-
-    def _init_vault_index(self, vault_path: str) -> None:
-        """Create or reconnect VaultIndex, EmbeddingEngine, FingerprintEngine."""
-        if not vault_path or not Path(vault_path).is_dir():
-            return
-
-        # Avoid re-initialising if the vault hasn't changed
-        if (
-            self._vault_index is not None
-            and self._vault_index._root == Path(vault_path)
-        ):
-            return
-
-        try:
-            self._vault_index = VaultIndex(vault_path)
-            self._embedding_engine = EmbeddingEngine(vault_index=self._vault_index)
-            self._fingerprint_engine = FingerprintEngine(
-                embedding_engine=self._embedding_engine
-            )
-            # Wire vault_watcher's reindex_ready signal
-            sidebar = self._window.sidebar
-            if hasattr(sidebar, "_vault_watcher") and sidebar._vault_watcher is not None:
-                sidebar._vault_watcher.set_vault_index(self._vault_index)
-                try:
-                    sidebar._vault_watcher.reindex_ready.disconnect(self._on_reindex_ready)
-                except RuntimeError:
-                    pass
-                sidebar._vault_watcher.reindex_ready.connect(self._on_reindex_ready)
-
-            # Drop stale rows whose files were deleted while we weren't watching.
-            self._prune_missing_notes()
-
-            # First launch: mark all .md files dirty and kick off indexing
-            existing = self._vault_index.get_all_nodes()
-            if not existing:
-                self._scan_and_enqueue_vault(vault_path)
-
-            self._start_index_worker()
-        except Exception as exc:
-            logger.warning("_init_vault_index failed: %s", exc)
-
-    def _prune_missing_notes(self) -> None:
-        """Remove DB entries whose backing .md files no longer exist on disk."""
-        if self._vault_index is None:
-            return
-        try:
-            for row in self._vault_index.get_all_nodes():
-                path = row.get("path") or ""
-                if path and not Path(path).exists():
-                    self._vault_index.delete_note(path)
-        except Exception as exc:
-            logger.warning("_prune_missing_notes failed: %s", exc)
-
-    def _scan_and_enqueue_vault(self, vault_path: str) -> None:
-        """Walk vault directory and upsert all .md files as dirty=1."""
-        root = Path(vault_path)
-        for md_file in root.rglob("*.md"):
-            if any(p.startswith(".") for p in md_file.parts):
-                continue
-            rel_id = str(md_file.relative_to(root))
-            try:
-                mtime = md_file.stat().st_mtime
-            except OSError:
-                mtime = 0.0
-            self._vault_index.upsert_note(
-                id=rel_id,
-                path=str(md_file),
-                modified_at=mtime,
-                dirty=1,
-            )
-
-    def _start_index_worker(self) -> None:
-        if self._vault_index is None:
-            return
-        if self._index_worker is not None and self._index_worker.isRunning():
-            self._index_worker.stop()
-            self._index_worker.wait(3000)
-
-        api_key = self._config.get("google_api_key", "")
-        model_id = self._config.get("gemma_model", "gemma-4-31b-it")
-
-        self._index_worker = IndexWorker(
-            vault_index=self._vault_index,
-            embedding_engine=self._embedding_engine,
-            fingerprint_engine=self._fingerprint_engine,
-            api_key=api_key,
-            model_id=model_id,
-        )
-        self._index_worker.progress.connect(self._on_index_progress)
-        self._index_worker.indexing_finished.connect(self._on_index_finished)
-        self._index_worker.error.connect(self._on_index_error)
-        self._index_worker.start()
-
-    def _on_reindex_ready(self) -> None:
-        """VaultWatcher debounce fired — re-run IndexWorker for dirty notes."""
-        self._start_index_worker()
-
-    def _on_index_progress(self, done: int, total: int) -> None:
-        if total > 0:
-            self._window.status_bar_widget.set_status(
-                "#76746b", f"Indexing vault… {done}/{total}"
-            )
-
-    def _on_index_finished(self) -> None:
-        # Clear the indexing status message by restoring normal status
-        vault = self._config.get("vault_path", "")
-        self._window.status_bar_widget.set_vault_path(vault)
-
-    def _on_index_error(self, message: str) -> None:
-        logger.warning("IndexWorker error: %s", message)
 
     # ------------------------------------------------------------------
     # Help menu actions

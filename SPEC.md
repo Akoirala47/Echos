@@ -448,3 +448,441 @@ The sidebar becomes a two-section panel:
 - Apply both fixes to the `_md_to_html()` function in **both** `echos/ui/notes_panel.py` and `echos/ui/editor_tab.py` (they share identical implementations).
 
 **Files changed**: `echos/ui/notes_panel.py`, `echos/ui/editor_tab.py`.
+
+---
+
+## 10. Phase 26 — Deprecation: Brain View & Semantic Indexing
+
+> **Audit status**: Triple-checked against live code as of April 2026. All cross-file
+> dependencies listed below have been verified by reading every affected file.
+
+### 10.1 Motivation
+
+The Brain/Canvas view (`graph_canvas.py`, `connection_resolver.py`) and the semantic
+indexing pipeline (`vault_index.py`, `embeddings.py`, `index_worker.py`) are currently
+broken, memory-heavy, and require `sentence-transformers` / `torch` (multi-GB download).
+Removing them reduces the app footprint, eliminates startup overhead, and clears the
+code surface area before adding the QoL features in Phase 27+.
+
+### 10.2 Files to Delete
+
+| File | Reason |
+|------|--------|
+| `echos/core/embeddings.py` | `EmbeddingEngine` — sentence-transformers wrapper, used only by fingerprint pre-filter and graph edge computation |
+| `echos/core/vault_index.py` | `VaultIndex` — SQLite index, used only by graph and indexing pipeline |
+| `echos/core/index_worker.py` | `IndexWorker` — background vault indexer, reads/writes VaultIndex only |
+| `echos/core/connection_resolver.py` | `ConnectionResolver` — builds NodeData/EdgeData for graph display, imports VaultIndex + numpy |
+| `echos/ui/graph_canvas.py` | `GraphCanvasWidget` — QWebEngineView wrapping `graph.html`, referenced only by MainWindow |
+
+**Note:** `echos/core/fingerprint.py` (`FingerprintEngine` / `Fingerprint`) is **NOT** deleted.
+It has no imports of the deleted modules. After Phase 26 it becomes unused (not instantiated in
+`app.py`) but leaving the file causes zero runtime issues. It can be cleaned up in a later pass.
+
+### 10.3 `echos/app.py` — Required Changes
+
+This file has the most invasive changes. Every item below must be removed; skipping any one
+will cause an `ImportError` or `AttributeError` crash at startup.
+
+#### Imports to remove (top of file)
+```python
+from echos.core.embeddings import EmbeddingEngine   # DELETE
+from echos.core.index_worker import IndexWorker      # DELETE
+from echos.core.vault_index import VaultIndex        # DELETE
+```
+`FingerprintEngine` import can stay or be removed; after `_init_vault_index` is deleted it will
+be unreferenced but harmless.
+
+#### Instance variables to remove (inside `__init__`)
+```python
+self._vault_index: VaultIndex | None = None       # DELETE
+self._embedding_engine: EmbeddingEngine | None = None  # DELETE
+self._fingerprint_engine: FingerprintEngine | None = None  # DELETE
+self._index_worker: IndexWorker | None = None     # DELETE
+```
+
+#### Signal connections to remove (inside `_connect_signals`)
+```python
+w.sidebar.graph_view_requested.connect(self._on_graph_view_requested)  # DELETE
+w.graph_canvas.back_requested.connect(self._on_graph_back)             # DELETE
+w.graph_canvas.node_clicked.connect(self._on_graph_node_clicked)       # DELETE
+w.brain_view_action.triggered.connect(self._on_graph_view_requested)   # DELETE
+```
+
+#### Method calls to remove (inside `_apply_initial_ui_state`)
+```python
+self._init_vault_index(vault)   # DELETE this call
+```
+
+#### Method calls to remove (inside `_on_settings`)
+```python
+self._init_vault_index(vault)   # DELETE this call
+```
+
+#### Code block to remove (inside `_launch_notes_worker`)
+Remove the entire `existing_fps` block and the `fingerprint_engine` kwarg passed to
+`NotesWorker`. After removal the constructor call becomes:
+```python
+self._notes_worker = NotesWorker(
+    transcript=transcript,
+    course_name=course.get("name", "Unknown"),
+    lecture_num=self._lecture_num,
+    date=today,
+    api_key=api_key,
+    model_id=self._config.get("gemma_model", "gemma-4-31b-it"),
+    temperature=float(self._config.get("temperature", 0.2)),
+    max_tokens=int(self._config.get("max_tokens", 8192)),
+    custom_instruction=custom_instruction,
+    is_continuation=is_continuation,
+    existing_notes_tail=notes_tail,
+    # fingerprint_engine and existing_fingerprints removed
+)
+```
+`_notes_fingerprint` tracking and `inject_frontmatter(fingerprint=...)` in `_on_save` can
+remain — when `fingerprint_engine` is not passed, `notes_worker.fingerprint_str` stays `""`
+and `inject_frontmatter(fingerprint=None)` simply omits the frontmatter field.
+
+#### Entire methods to delete
+All of these methods reference deleted types or are exclusively used by the graph/index
+pipeline. None of them are called from outside the graph/index code paths.
+
+| Method | Why |
+|--------|-----|
+| `_on_graph_view_requested` | Shows graph canvas, calls `_build_graph_data`, references `self._window.graph_canvas` |
+| `_on_graph_back` | Calls `self._window.hide_graph_view()` |
+| `_on_graph_node_clicked` | Calls `self._window.hide_graph_view()` |
+| `_build_graph_data` | Walks disk + queries `VaultIndex`; returns raw node/edge lists for graph |
+| `_init_vault_index` | Creates `VaultIndex`, `EmbeddingEngine`, `FingerprintEngine`, `IndexWorker`; also references `sidebar._vault_watcher` which has never existed (sidebar stores it as `_watcher`) |
+| `_prune_missing_notes` | Walks VaultIndex rows to remove stale entries |
+| `_scan_and_enqueue_vault` | Walks vault dir and marks all `.md` files dirty=1 in VaultIndex |
+| `_start_index_worker` | Creates and starts `IndexWorker` |
+| `_on_reindex_ready` | Callback from `VaultWatcher.reindex_ready` signal |
+| `_on_index_progress` | Shows "Indexing vault… N/M" in status bar |
+| `_on_index_finished` | Clears indexing status |
+| `_on_index_error` | Logs IndexWorker error |
+
+**Safety note:** `sidebar._vault_watcher` (referenced inside `_init_vault_index`) has always
+been a dead reference. The sidebar stores its `VaultWatcher` as `self._watcher`, not
+`self._vault_watcher`. This means the `VaultIndex ↔ VaultWatcher` integration was never
+wired up and removing this code changes no currently-working behaviour.
+
+### 10.4 `echos/ui/main_window.py` — Required Changes
+
+#### Import to remove
+```python
+from echos.ui.graph_canvas import GraphCanvasWidget   # DELETE
+```
+
+#### Code to remove in `__init__`
+```python
+self.graph_canvas = GraphCanvasWidget()   # DELETE
+
+# In the content stack block — DELETE both lines below:
+self._content_stack = QStackedWidget()
+self._content_stack.addWidget(self.tab_manager.tab_widget)  # index 0
+self._content_stack.addWidget(self.graph_canvas)             # index 1
+```
+Replace the `QStackedWidget` with direct placement of `self.tab_manager.tab_widget` inside the
+top splitter:
+```python
+# REPLACE the QStackedWidget block with:
+top_splitter.addWidget(self.tab_manager.tab_widget)
+```
+Update the top-splitter `setSizes` call to match (was `[248, 972]`).
+
+#### Methods to remove
+```python
+def show_graph_view(self) -> None: ...   # DELETE
+def hide_graph_view(self) -> None: ...   # DELETE
+```
+
+#### Menu item to remove (inside `_build_menu`)
+```python
+self.brain_view_action = QAction("Brain View", self)
+self.brain_view_action.setShortcut(QKeySequence("Ctrl+G"))
+view_menu.addAction(self.brain_view_action)
+```
+Remove all three lines. The `view_menu` can remain for future use.
+
+#### `QStackedWidget` import
+Remove `QStackedWidget` from the `from PyQt6.QtWidgets import (...)` block if it is no longer
+used elsewhere in this file (it is only used for `_content_stack`).
+
+### 10.5 `echos/ui/sidebar.py` — Required Changes
+
+#### Signal declaration to remove
+```python
+graph_view_requested  = pyqtSignal()   # DELETE
+```
+
+#### Vault header button to remove (inside `_build_ui`)
+Remove the entire `vault_icon_btn` block (creation, styling, connection, and the
+`vhr.addWidget(vault_icon_btn, ...)` line). The vault header row becomes just the name
+label + path label, e.g.:
+```python
+vhr.addWidget(self._vault_name_lbl, 1)
+vhr.addWidget(self._vault_path_lbl)
+```
+
+### 10.6 Files That Require No Changes
+
+| File | Status |
+|------|--------|
+| `echos/core/vault_watcher.py` | `VaultWatcher` guards all `vault_index` calls with `if self._vault_index is not None`. The `reindex_ready` signal remains declared but will never fire a connected slot after `app.py` is cleaned. Zero risk. |
+| `echos/core/fingerprint.py` | No imports of deleted modules. Becomes dead code after `app.py` stops instantiating `FingerprintEngine`, but causes no import or runtime errors. |
+| `echos/core/notes_worker.py` | `NotesWorker.run()` line 186: `if self._fingerprint_engine is not None:` — fingerprint generation is already guarded. Passing `fingerprint_engine=None` (or omitting it) silently skips fingerprint generation and leaves `fingerprint_str = ""`. Confirmed safe. |
+| `echos/utils/frontmatter.py` | `inject_frontmatter(fingerprint=None)` simply omits the frontmatter field. No change needed. |
+| All other UI files | Unaffected. |
+
+### 10.7 Data Note
+
+Existing vaults already have a `.echoes/vault.index.db` SQLite file created by the old
+`VaultIndex` constructor. This file is inert after Phase 26 (nothing reads or writes it).
+It can be left in place or the user can delete `.echoes/` manually. The app will not attempt
+to create or read it.
+
+### 10.8 Verification Checklist
+
+After completing all code changes, verify manually:
+
+1. **Cold launch** — app starts without `sentence-transformers` installed; no `ImportError`.
+2. **Vault tree** — set a vault path; tree populates, folder clicks work, note clicks open tabs.
+3. **VaultWatcher** — create/rename a file in the vault externally; tree refreshes within ~1s.
+4. **Recording → Notes** — record 30 s, stop, generate notes; notes stream in correctly.
+5. **Save** — save generated notes; file appears in vault; frontmatter present, no `fingerprint:` field.
+6. **Brain View UI** — confirm vault header has no icon button; View menu has no "Brain View" item; `Ctrl+G` does nothing.
+7. **Multi-tab editor** — click a vault `.md` file; opens in new editor tab; edit and save work.
+
+---
+
+## 11. Phase 27 — Full-Featured Sidebar CRUD
+
+### 11.1 Drag-and-Drop File Moving
+
+`_VaultTree` (the `QTreeWidget` subclass in `sidebar.py`) gains full drag-and-drop:
+
+- Call `setDragEnabled(True)`, `setAcceptDrops(True)`, `setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)`.
+- Override `dropEvent`: before calling `super().dropEvent()`, intercept the event to extract the **source path** (from the dragged item's `UserRole` data) and **target folder path** (from the item under the drop point). Call `shutil.move(src, target_dir / src.name)`. If `shutil.move` succeeds, suppress the default Qt tree reorder (call `event.accept()` without `super()`) and let `VaultWatcher.tree_changed` trigger the UI refresh instead. On error, show a `QMessageBox.warning`.
+- Guard against dropping a folder onto itself or one of its own descendants (would create a recursive loop).
+- Guard against dropping to the same parent (no-op).
+
+### 11.2 Right-Click Context Menu
+
+`_VaultTree` handles `customContextMenuRequested` (set `setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)`):
+
+Context menu items vary by target:
+
+| Target | Actions |
+|--------|---------|
+| Folder | New File, New Folder, Rename, Delete Folder |
+| File | Rename, Delete File, Reveal in Finder |
+| Empty space / root | New File at root, New Folder at root |
+
+- **New File**: `QInputDialog.getText` for the filename (auto-appends `.md` if omitted). Creates an empty file with `Path.touch()`. VaultWatcher refreshes.
+- **New Folder**: `QInputDialog.getText` for the folder name. `Path.mkdir(parents=True, exist_ok=True)`. VaultWatcher refreshes.
+- **Rename**: triggers inline rename (see §11.3).
+- **Delete File**: `QMessageBox.question` confirm, then `Path.unlink()`. Emit `file_deleted(str)` signal so open editor tabs for that file can be closed.
+- **Delete Folder**: `QMessageBox.question` confirm with folder name + "all contents". `shutil.rmtree()`. Emit `file_deleted(str)` for each `.md` file within.
+- **Reveal in Finder** (macOS): `subprocess.run(["open", "-R", str(path)])`.
+
+### 11.3 Inline Rename
+
+When Rename is triggered (context menu or `F2` key press on a selected item):
+
+- Mark the item editable: `item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)`.
+- Call `self.editItem(item, 0)` to open the inline editor.
+- Connect `itemChanged` to `_on_item_renamed(item, old_name)`: on change, call `shutil.move(old_path, old_path.parent / new_name)`. If the move fails, revert the item text and show a warning.
+- After editing, remove the `ItemIsEditable` flag to prevent accidental double-clicks from triggering rename.
+- If a file is renamed that has an open editor tab, emit `file_renamed(old_path: str, new_path: str)` via `SidebarWidget` so `TabManager` can update its `_path_to_index` map and tab label.
+
+### 11.4 New Signals on `SidebarWidget`
+
+```python
+file_deleted = pyqtSignal(str)               # absolute path removed from disk
+file_renamed = pyqtSignal(str, str)          # (old_abs_path, new_abs_path)
+```
+
+`AppController._connect_signals` wires these:
+- `file_deleted`: call `tab_manager.close_tabs_for_path(path)` (close any tab whose file_path matches).
+- `file_renamed`: call `tab_manager.rename_tab_path(old, new)` (update path map and tab label).
+
+### 11.5 `TabManager` extensions required
+
+```python
+def close_tabs_for_path(self, path: str) -> None:
+    """Close any tab whose EditorTab.file_path() == path, without unsaved-changes prompt."""
+
+def rename_tab_path(self, old_path: str, new_path: str) -> None:
+    """Update path→index map and tab label if old_path is open."""
+```
+
+---
+
+## 12. Phase 28 — Split Views & Tear-off Tabs
+
+### 12.1 Architecture
+
+Introduce a new widget `SplitTabArea` (`echos/ui/split_tab_area.py`) that owns a `QSplitter` containing one or more `TabManager` panel widgets. `MainWindow` replaces the direct `TabManager.tab_widget` reference with `SplitTabArea`.
+
+```
+MainWindow
+  └─ top_splitter
+       ├─ SidebarWidget
+       └─ SplitTabArea (QWidget)
+            └─ _splitter (QSplitter)
+                 ├─ TabManager A  ← primary (owns Echoes tab, index 0)
+                 └─ TabManager B  ← spawned by split action (no Echoes tab)
+```
+
+`MainWindow.tab_manager` becomes a property returning `split_tab_area.primary_manager` (the original `TabManager` that holds the Echoes tab). `app.py` calls `self._window.tab_manager.open_file(...)` — unchanged.
+
+The active manager (the one most recently focused) is tracked separately for routing `open_file` calls from the command palette and file double-clicks.
+
+### 12.2 Split Right / Split Down
+
+`EchosTabBar` gains a right-click context menu (override `mousePressEvent` to detect `Qt.RightButton`):
+
+| Action | Behaviour |
+|--------|-----------|
+| Split Right | `split_tab_area.split(Qt.Orientation.Horizontal)` |
+| Split Down | `split_tab_area.split(Qt.Orientation.Vertical)` |
+| Close Pane | `split_tab_area.close_pane(manager)` (disallowed for primary) |
+
+`split_tab_area.split(orientation)`:
+1. Create a new `TabManager(None)` — no Echoes tab (pass `None` as `echoes_widget`).
+2. `TabManager.__init__` skips adding tab 0 when `echoes_widget is None`.
+3. Insert new `TabManager.tab_widget` into `_splitter` at the next index.
+4. Set focus to the new panel.
+
+`split_tab_area.close_pane(manager)`:
+1. Close all file tabs inside the manager (with unsaved-changes prompts).
+2. Remove its `tab_widget` from `_splitter`.
+3. If only the primary manager remains, destroy the splitter and revert to single layout.
+
+### 12.3 Tear-off Tabs
+
+`EchosTabBar` overrides `mousePressEvent`, `mouseMoveEvent`, `mouseReleaseEvent` to implement drag detection:
+
+1. `mousePressEvent`: record start position `_drag_start_pos` and the tab index under the cursor.
+2. `mouseMoveEvent`: when drag distance > 40 px **and** the cursor is **outside** the tab bar rect, emit `tearoff_requested(index: int)` signal. Reset drag state.
+3. `SplitTabArea` handles `tearoff_requested(index)`:
+   - Extract the `EditorTab` widget at that index.
+   - Remove the tab from the `TabManager` (call `close_tab` without unsaved-changes handling — the EditorTab is being transferred, not closed).
+   - Create `TearOffWindow(editor_tab, file_path, parent=None)`.
+   - Show the `TearOffWindow`.
+4. `TearOffWindow(QMainWindow)`:
+   - Warm-parchment styled frameless window (800×600 default size).
+   - Contains the detached `EditorTab` as central widget.
+   - Toolbar row with: file name label + "Dock Back" button.
+   - **Dock Back**: clicking "Dock Back" calls `split_tab_area.dock_tab(editor_tab, path)`, which re-inserts the tab into the primary `TabManager` and closes the `TearOffWindow`.
+
+### 12.4 Keyboard & Menu
+
+- `Ctrl+\` — Split Right (new shortcut, registered in MainWindow).
+- `Ctrl+Shift+\` — Close current pane (if not primary).
+- Right-click on tab bar shows context menu with Split Right, Split Down, Close Pane.
+
+---
+
+## 13. Phase 29 — Seamless Image Pasting
+
+### 13.1 `_MarkdownEditor` subclass
+
+`editor_tab.py` introduces a `_MarkdownEditor(QTextEdit)` subclass used in place of the bare `QTextEdit` for the `_editor` widget:
+
+```python
+class _MarkdownEditor(QTextEdit):
+    def __init__(self, vault_root: Path | None = None, parent=None): ...
+    def set_vault_root(self, vault_root: Path) -> None: ...
+    def keyPressEvent(self, event) -> None: ...  # intercepts Ctrl/Cmd+V for images
+    def dropEvent(self, event) -> None: ...      # intercepts dropped image files
+```
+
+### 13.2 Image Detection and Save
+
+When `keyPressEvent` receives `Ctrl+V` (or `Meta+V` on macOS), check `QApplication.clipboard().mimeData()`:
+- If `mimeData.hasImage()` → extract via `mimeData.imageData()` as a `QImage`.
+- If `mimeData.hasUrls()` → check if any URL points to an image file (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`).
+
+Image save path: `{vault_root}/.assets/` if `vault_root` is set, else `{file_dir}/.assets/`. Create the directory with `Path.mkdir(exist_ok=True)`.
+
+Filename: `pasted_image_{YYYYMMDD_HHMMSS}.png`.
+
+Save: `QImage.save(str(save_path), "PNG")` for clipboard images; `shutil.copy` for URL-sourced images.
+
+Insert at cursor: `self.insertPlainText(f"![image](.assets/{filename})")`.
+
+On error: fall through to default `QTextEdit.keyPressEvent(event)` (normal text paste).
+
+### 13.3 Vault Root Plumbing
+
+`EditorTab.load_file(path: str, vault_root: str = "")`:
+- Store `vault_root` and call `self._editor.set_vault_root(Path(vault_root))` if non-empty.
+
+`TabManager.open_file(path: str, vault_root: str = "")`:
+- Pass `vault_root` through to `EditorTab.load_file`.
+
+`AppController._on_note_selected(path_str: str)`:
+- Call `self._window.tab_manager.open_file(path_str, vault_root=self._config.get("vault_path", ""))`.
+
+---
+
+## 14. Phase 30 — Unified Command Palette & Quick Peek
+
+### 14.1 Command Palette (`echos/ui/command_palette.py`)
+
+`CommandPalette(QDialog)`:
+- `Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog` — no title bar.
+- Background: `PANEL_BG` at 95% opacity (use `setWindowOpacity(0.97)`).
+- `BORDER_SOFT` border + 8px radius via `setStyleSheet`.
+- Size: 520×360, centered over parent window.
+- Layout: search `QLineEdit` (40px height, `PANEL_BG`, `ACCENT` focus border) + `QListWidget` (fills rest).
+- Closes on `Escape` or clicking outside (install event filter or override `focusOutEvent`).
+
+**Results model** — two categories shown interleaved, type-annotated:
+
+| Prefix | Category |
+|--------|---------|
+| (none) | Vault files matching fuzzy query |
+| `>` prefix | Commands matching fuzzy query |
+
+File results: walk vault directory tree (all `.md` files). Filter by fuzzy match against relative path. Show filename (bold) + relative path (muted, smaller).
+
+Command results (built-in registry):
+- `> New Recording` → `AppController._on_new_recording()`
+- `> Settings` → `AppController._on_settings()`
+- `> Save Note` → `AppController._on_save()`
+- `> Toggle Transcript` → hide/show transcript panel
+- `> Toggle Notes` → hide/show notes panel
+
+**Keyboard behaviour**: ↑/↓ navigate list; Enter activates; Escape closes.
+
+**Fuzzy matching algorithm**: check that all characters of the query appear in the result string in order (subsequence match). Score = 1.0 if consecutive match, 0.5 if scattered; sort by score descending.
+
+### 14.2 Shortcut
+
+`Ctrl+Shift+P` opens the command palette (note: `Ctrl+P` = ⌘P on macOS is reserved for Pause Recording).
+
+In `MainWindow._build_menu`: add `self.command_palette_action = QAction("Command Palette", self)` with shortcut `Ctrl+Shift+P` to the View menu.
+
+In `AppController._connect_signals`: `w.command_palette_action.triggered.connect(self._on_command_palette)`.
+
+`AppController._on_command_palette`: instantiate `CommandPalette(vault_path, command_registry, parent=self._window)` and call `.exec()`.
+
+### 14.3 Quick Peek — Hover Preview for Wikilinks
+
+`_MarkdownEditor` adds hover tracking:
+
+- Set `setMouseTracking(True)`.
+- Override `mouseMoveEvent`: find the text cursor at `event.pos()` using `cursorForPosition`. Extract the line text. Run `re.search(r'\[\[([^\]]+)\]\]', line)` to find wikilinks. Determine if the cursor column falls inside a `[[...]]` span.
+- If a wikilink is found: start `_hover_timer` (QTimer, 500 ms one-shot) with the target name stored.
+- If cursor moves off the wikilink: stop `_hover_timer` and hide any visible preview.
+- On `_hover_timer` timeout: resolve the wikilink to a file path by scanning vault (stem match, case-insensitive). If found, create/show `_WikilinkPreview`.
+
+`_WikilinkPreview(QWidget)`:
+- `Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint`.
+- Background: `PANEL_BG`, border `BORDER_SOFT`, 6px radius, 12px padding.
+- Size: 360×200. Positioned 16px below cursor (screen coordinates).
+- Content: `QTextBrowser` rendering the first 15 lines of the target file as HTML (using `_md_to_html`).
+- Header: filename label in bold + `TEXT_FAINT` muted path.
+- Auto-hides on `leaveEvent` or when a new mouse position is not over the preview widget.
+- Vault root required to resolve wikilinks — passed from `EditorTab` via `set_vault_root`.

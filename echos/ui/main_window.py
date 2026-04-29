@@ -6,15 +6,14 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
     QSplitter,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from echos.ui.graph_canvas import GraphCanvasWidget
 from echos.ui.notes_panel import NotesPanel
 from echos.ui.record_bar import RecordBarWidget
 from echos.ui.sidebar import SidebarWidget
+from echos.ui.split_tab_area import SplitTabArea
 from echos.ui.status_bar import StatusBarWidget
 from echos.ui.tab_manager import TabManager
 from echos.ui.transcript_panel import TranscriptPanel
@@ -27,11 +26,9 @@ class MainWindow(QMainWindow):
     All UI sub-widgets are exposed as public attributes so AppController
     can connect signals without MainWindow needing to know about business logic.
 
-    File tabs are managed by ``tab_manager``.  The Echoes tab (index 0) contains
-    the recording + notes view.  Clicking a vault note opens it in a new tab.
-
-    The ``graph_canvas`` widget is stacked over the tab layout and shown/hidden
-    via ``show_graph_view()`` / ``hide_graph_view()`` with a 150ms opacity fade.
+    File tabs are managed by ``tab_manager`` (primary manager in split_tab_area).
+    The Echoes tab (index 0) contains the recording + notes view.
+    Clicking a vault note opens it in a new editor tab.
     """
 
     def __init__(self, parent=None) -> None:
@@ -46,7 +43,6 @@ class MainWindow(QMainWindow):
         self.transcript_panel = TranscriptPanel()
         self.notes_panel = NotesPanel()
         self.status_bar_widget = StatusBarWidget()
-        self.graph_canvas = GraphCanvasWidget()
 
         # ── Panels splitter (transcript | notes) ──────────────────────────────
         panels_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -68,21 +64,13 @@ class MainWindow(QMainWindow):
         ra_layout.addWidget(self.record_bar)
         ra_layout.addWidget(panels_splitter, 1)
 
-        # ── Tab manager: Echoes (index 0) + file tabs ─────────────────────────
-        self.tab_manager = TabManager(recording_area)
+        # ── Split tab area: Echoes (primary) + split panes ───────────────────
+        self.split_tab_area = SplitTabArea(recording_area)
 
-        # ── Content stack: [0] tab widget, [1] graph canvas ───────────────────
-        self._content_stack = QStackedWidget()
-        self._content_stack.addWidget(self.tab_manager.tab_widget)  # index 0
-        self._content_stack.addWidget(self.graph_canvas)             # index 1
-        # NOTE: No QGraphicsOpacityEffect here — QWebEngineView renders via its
-        # own Chromium/OpenGL layer and ignores Qt's compositor, so opacity
-        # effects make the WebEngine area appear transparent.
-
-        # ── Top splitter (sidebar | content stack) ────────────────────────────
+        # ── Top splitter (sidebar | split area) ──────────────────────────────
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
         top_splitter.addWidget(self.sidebar)
-        top_splitter.addWidget(self._content_stack)
+        top_splitter.addWidget(self.split_tab_area)
         top_splitter.setSizes([248, 972])
         top_splitter.setCollapsible(0, False)
         top_splitter.setCollapsible(1, False)
@@ -108,16 +96,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._build_menu()
+        self._register_split_shortcuts()
 
-    # ── Graph view transitions ─────────────────────────────────────────────────
-
-    def show_graph_view(self) -> None:
-        """Switch the content stack to the graph canvas."""
-        self._content_stack.setCurrentIndex(1)
-
-    def hide_graph_view(self) -> None:
-        """Switch back to the normal tab view."""
-        self._content_stack.setCurrentIndex(0)
+    @property
+    def tab_manager(self) -> TabManager:
+        """Backward-compat: returns the primary TabManager from the split area."""
+        return self.split_tab_area.primary_manager
 
     # ── Menu ──────────────────────────────────────────────────────────────────
 
@@ -159,15 +143,27 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.toggle_transcript_action)
         self.toggle_notes_action = QAction("Toggle Notes Panel", self)
         view_menu.addAction(self.toggle_notes_action)
-        self.brain_view_action = QAction("Brain View", self)
-        self.brain_view_action.setShortcut(QKeySequence("Ctrl+G"))
-        view_menu.addAction(self.brain_view_action)
+        view_menu.addSeparator()
+        self.command_palette_action = QAction("Command Palette", self)
+        self.command_palette_action.setShortcut(QKeySequence("Ctrl+Shift+P"))
+        view_menu.addAction(self.command_palette_action)
 
         help_menu = mb.addMenu("Help")
         self.model_status_action = QAction("Model Status", self)
         help_menu.addAction(self.model_status_action)
         self.open_log_action = QAction("Open Log File", self)
         help_menu.addAction(self.open_log_action)
+
+    def _register_split_shortcuts(self) -> None:
+        from PyQt6.QtGui import QKeySequence, QShortcut
+        split_right = QShortcut(QKeySequence("Ctrl+\\"), self)
+        split_right.activated.connect(
+            lambda: self.split_tab_area.split(Qt.Orientation.Horizontal)
+        )
+        close_pane = QShortcut(QKeySequence("Ctrl+Shift+\\"), self)
+        close_pane.activated.connect(
+            lambda: self.split_tab_area.close_pane(self.split_tab_area.active_manager)
+        )
 
     def update_course_header(self, course: dict, session_num: int) -> None:
         """Keep window title minimal — topic shown in the record bar header."""

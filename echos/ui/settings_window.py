@@ -423,12 +423,18 @@ class SettingsWindow(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Echos Settings")
-        self.setMinimumSize(520, 440)
+        self.setMinimumSize(540, 460)
 
-        self._redownload_requested = False  # set by _TranscriptionTab._redownload()
+        from echos.utils.theme import WINDOW_BG, BORDER_SOFT, BORDER
+        self.setStyleSheet(
+            f"QDialog {{ background: {WINDOW_BG}; }}"
+        )
+
+        self._redownload_requested = False
         self._config = dict(config)
 
         self._tabs = QTabWidget()
+        self._tabs.setDocumentMode(True)
         self._general_tab = _GeneralTab(self._config, self)
         self._api_tab = _ApiKeysTab(self._config, self)
         self._transcription_tab = _TranscriptionTab(self._config, model_manager, self)
@@ -445,9 +451,15 @@ class SettingsWindow(QDialog):
         )
         buttons.accepted.connect(self._on_save)
         buttons.rejected.connect(self.reject)
+        # Make Save the default (styled with accent border)
+        save_btn = buttons.button(QDialogButtonBox.StandardButton.Save)
+        if save_btn:
+            save_btn.setDefault(True)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(self._tabs)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(12)
+        layout.addWidget(self._tabs, 1)
         layout.addWidget(buttons)
         self.setLayout(layout)
 

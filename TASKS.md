@@ -558,3 +558,199 @@ Polish tasks (T-042–T-050) can begin once T-028 is complete.
   - Add `_strip_frontmatter(text) -> str` (strips `---` … `---` YAML block).
   - Remove `"nl2br"` from the `markdown.markdown()` extensions list.
   - Call `_strip_frontmatter()` before passing text to `markdown.markdown()`.
+
+---
+
+## Phase 26 — Deprecate Brain View & Semantic Indexing
+
+> See SPEC §10 for full rationale, dependency audit, and verification checklist.
+> Complete tasks in order T-D01 → T-D06 to avoid intermediate broken states.
+> T-D07 is the manual smoke-test gating sign-off.
+
+- [ ] **T-D01** Delete five files (no other file imports them except the ones patched in T-D02–T-D04):
+  - `echos/core/embeddings.py`
+  - `echos/core/vault_index.py`
+  - `echos/core/index_worker.py`
+  - `echos/core/connection_resolver.py`
+  - `echos/ui/graph_canvas.py`
+
+- [ ] **T-D02** `echos/app.py` — remove all graph + indexing code. This is the most invasive task; each sub-item is a hard requirement:
+  - **Imports**: remove `from echos.core.embeddings import EmbeddingEngine`, `from echos.core.index_worker import IndexWorker`, `from echos.core.vault_index import VaultIndex`. (Optionally remove `FingerprintEngine` import too — it will be unused.)
+  - **`__init__`**: remove the four instance vars `_vault_index`, `_embedding_engine`, `_fingerprint_engine`, `_index_worker` (and the "Phase 22/23" comment block).
+  - **`_connect_signals`**: remove the four signal connections `graph_view_requested`, `back_requested`, `node_clicked`, `brain_view_action.triggered`.
+  - **`_apply_initial_ui_state`**: remove the `self._init_vault_index(vault)` call.
+  - **`_on_settings`**: remove the `self._init_vault_index(vault)` call.
+  - **`_launch_notes_worker`**: remove the `existing_fps` block (the `if self._vault_index is not None:` block) and remove the `fingerprint_engine=` and `existing_fingerprints=` kwargs from the `NotesWorker(...)` constructor call. `_notes_fingerprint` and the `inject_frontmatter(fingerprint=...)` call in `_on_save` can remain unchanged — they degrade gracefully to no-op when fingerprint_str is `""`.
+  - **Delete entire methods**: `_on_graph_view_requested`, `_on_graph_back`, `_on_graph_node_clicked`, `_build_graph_data`, `_init_vault_index`, `_prune_missing_notes`, `_scan_and_enqueue_vault`, `_start_index_worker`, `_on_reindex_ready`, `_on_index_progress`, `_on_index_finished`, `_on_index_error`.
+
+- [ ] **T-D03** `echos/ui/main_window.py` — remove graph canvas integration:
+  - Remove `from echos.ui.graph_canvas import GraphCanvasWidget` import.
+  - Remove `self.graph_canvas = GraphCanvasWidget()`.
+  - Remove the `QStackedWidget` (`_content_stack`) entirely: replace it by adding `self.tab_manager.tab_widget` directly as the second child of `top_splitter` (i.e. `top_splitter.addWidget(self.tab_manager.tab_widget)`).
+  - Remove `QStackedWidget` from the `from PyQt6.QtWidgets import (...)` line if it is no longer used.
+  - Remove `show_graph_view()` and `hide_graph_view()` methods.
+  - In `_build_menu`: remove `brain_view_action` creation, shortcut assignment, and `view_menu.addAction` call.
+
+- [ ] **T-D04** `echos/ui/sidebar.py` — remove graph entry point:
+  - Remove `graph_view_requested = pyqtSignal()` from the class-level signal declarations.
+  - Inside `_build_ui`: remove the entire `vault_icon_btn` block (QPushButton creation, styling, tooltip, icon assignment, cursor, click connection, and the `vhr.addWidget(vault_icon_btn, ...)` line). The vault header row renders fine with just the name and path labels.
+
+- [ ] **T-D05** Confirm `echos/core/notes_worker.py` requires no changes:
+  - Verify line: `if self._fingerprint_engine is not None:` — the fingerprint block is already guarded and skipped when `fingerprint_engine` is not passed (defaults to `None`). No code change needed.
+
+- [ ] **T-D06** Confirm `echos/core/vault_watcher.py` requires no changes:
+  - Verify that all `vault_index` calls are guarded: `if self._vault_index is not None:` — the watcher is already written to be harmless without a VaultIndex. `reindex_ready` signal stays declared but is never connected after T-D02. No code change needed.
+
+- [ ] **T-D07** Manual verification (smoke test — gate for sign-off):
+  1. `python -m echos.main` launches without `ImportError` or `AttributeError`.
+  2. Vault header shows name + path only — no folder icon button.
+  3. View menu has no "Brain View" item; `Ctrl+G` is a no-op.
+  4. Set vault path → sidebar tree populates; folder click sets save target; note click opens editor tab.
+  5. VaultWatcher: touch a file in the vault externally → sidebar tree refreshes ≤1 s later.
+  6. Record → Stop → Generate Notes → notes stream correctly → Save writes file to vault.
+  7. Multi-tab editor: open two vault notes, switch tabs, close a tab — all work as before.
+
+---
+
+## Phase 27 — Full-Featured Sidebar CRUD
+
+> See SPEC §11 for full design. All tasks are isolated to `echos/ui/sidebar.py` plus
+> minor extensions to `echos/ui/tab_manager.py` and `echos/app.py`.
+
+- [ ] **T-S01** `echos/ui/sidebar.py` — `_VaultTree` drag-and-drop:
+  - Enable: `setDragEnabled(True)`, `setAcceptDrops(True)`, `setDragDropMode(InternalMove)`.
+  - Override `dropEvent`: resolve source path (item UserRole) and target directory (item at drop point). Call `shutil.move(src, dest_dir / src.name)`. Suppress Qt's default tree-reorder; let VaultWatcher refresh. Guard: no-op if same parent or descendant drop.
+
+- [ ] **T-S02** `echos/ui/sidebar.py` — `_VaultTree` context menu:
+  - `setContextMenuPolicy(CustomContextMenu)` + `customContextMenuRequested.connect(_on_context_menu)`.
+  - Show **New File**, **New Folder**, **Rename**, **Delete** (+ **Reveal in Finder** for files).
+  - New File: `QInputDialog.getText` → `Path.touch()`. New Folder: `Path.mkdir()`.
+  - Delete File: confirm dialog → `Path.unlink()`. Delete Folder: confirm → `shutil.rmtree()`.
+  - Reveal in Finder (macOS): `subprocess.run(["open", "-R", path])`.
+
+- [ ] **T-S03** `echos/ui/sidebar.py` — inline rename:
+  - On **Rename** action (or `F2` key): `item.setFlags(... | Qt.ItemFlag.ItemIsEditable)`, then `self.editItem(item, 0)`. Store old path before edit begins.
+  - Connect `itemChanged`: call `shutil.move(old_path, old_path.parent / new_name)`. On failure, revert text and show warning. Strip `ItemIsEditable` after edit.
+  - Override `keyPressEvent` to intercept `F2` on selected item.
+
+- [ ] **T-S04** `echos/ui/sidebar.py` — add new signals on `SidebarWidget`:
+  - `file_deleted = pyqtSignal(str)` — emitted after any successful delete (absolute path).
+  - `file_renamed = pyqtSignal(str, str)` — emitted after rename (old_path, new_path).
+  - Both signals are forwarded from `_VaultTree` to `SidebarWidget` via internal connections.
+
+- [ ] **T-S05** `echos/ui/tab_manager.py` — add tab lifecycle helpers:
+  - `close_tabs_for_path(path: str)`: silently close any tab whose `file_path()` matches (no unsaved-changes dialog — file is gone from disk).
+  - `rename_tab_path(old_path: str, new_path: str)`: update `_path_to_index` map and tab label for an open tab.
+
+- [ ] **T-S06** `echos/app.py` — wire sidebar CRUD signals:
+  - In `_connect_signals`: `w.sidebar.file_deleted.connect(self._on_file_deleted)` and `w.sidebar.file_renamed.connect(self._on_file_renamed)`.
+  - `_on_file_deleted(path)`: call `self._window.tab_manager.close_tabs_for_path(path)`.
+  - `_on_file_renamed(old, new)`: call `self._window.tab_manager.rename_tab_path(old, new)`.
+
+---
+
+## Phase 28 — Split Views & Tear-off Tabs
+
+> See SPEC §12. New file `echos/ui/split_tab_area.py`; extends `tab_bar.py`, `tab_manager.py`, `main_window.py`.
+
+- [ ] **T-SP01** `echos/ui/tab_manager.py` — support secondary managers (no Echoes tab):
+  - Make `echoes_widget` parameter optional (`echoes_widget: QWidget | None = None`).
+  - When `echoes_widget is None`, skip adding tab 0; label the tab widget appropriately.
+  - Add `is_primary: bool` property.
+  - Expose `tab_widget` (already exists) and add `set_active_focus()` method.
+
+- [ ] **T-SP02** `echos/ui/split_tab_area.py` — **NEW** `SplitTabArea(QWidget)`:
+  - Owns a `QSplitter` containing `TabManager.tab_widget` instances.
+  - `__init__(echoes_widget)`: creates primary `TabManager`; wraps `tab_widget` in splitter.
+  - `primary_manager -> TabManager` property.
+  - `active_manager -> TabManager` property (last focused panel).
+  - `open_file(path, vault_root="")`: routes to `active_manager.open_file(...)`.
+  - `split(orientation: Qt.Orientation)`: add sibling `TabManager` to splitter.
+  - `close_pane(manager)`: close all its tabs, remove from splitter (block primary).
+  - `dock_tab(editor_tab, path)`: re-insert a torn-off EditorTab into `active_manager`.
+  - Focus tracking: install `focusInEvent` on each `tab_widget` to update `_active_manager`.
+
+- [ ] **T-SP03** `echos/ui/tab_bar.py` — drag detection + right-click menu:
+  - Add `tearoff_requested = pyqtSignal(int)` signal.
+  - Override `mousePressEvent`: record `_drag_start: QPoint` and `_drag_tab_index: int`.
+  - Override `mouseMoveEvent`: if drag > 40 px and cursor outside `self.rect()`, emit `tearoff_requested(_drag_tab_index)`, reset drag state.
+  - Override `mouseReleaseEvent`: reset drag state.
+  - Override `contextMenuEvent`: show **Split Right**, **Split Down**, **Close Pane** menu using `QMenu`. Emit corresponding signals to parent `SplitTabArea`.
+  - Add signals: `split_requested = pyqtSignal(str)` (value: `"right"` or `"down"`), `close_pane_requested = pyqtSignal()`.
+
+- [ ] **T-SP04** `echos/ui/split_tab_area.py` — `TearOffWindow(QMainWindow)`:
+  - Frameless `QMainWindow` (800×600). Contains detached `EditorTab` as central widget.
+  - Toolbar row: file name label + "Dock Back" `QPushButton`.
+  - "Dock Back" calls `split_tab_area.dock_tab(editor_tab, path)` and `self.close()`.
+  - Wire `tearoff_requested` from each `EchosTabBar` → `SplitTabArea._on_tearoff`.
+  - `_on_tearoff(index)`: extract `EditorTab`, remove from `TabManager`, wrap in `TearOffWindow`.
+
+- [ ] **T-SP05** `echos/ui/main_window.py` — integrate `SplitTabArea`:
+  - Replace `self.tab_manager = TabManager(recording_area)` with `self.split_tab_area = SplitTabArea(recording_area)`.
+  - In content stack: use `self.split_tab_area` instead of `self.tab_manager.tab_widget`.
+  - Add `tab_manager` property: `return self.split_tab_area.primary_manager`.
+  - Register `Ctrl+\` shortcut → `split_tab_area.split(Horizontal)`.
+  - Register `Ctrl+Shift+\` shortcut → `split_tab_area.close_pane(active_manager)`.
+
+- [ ] **T-SP06** `echos/app.py` — update file open routing:
+  - Change `self._window.tab_manager.open_file(path_str)` calls to `self._window.split_tab_area.open_file(path_str, vault_root=self._config.get("vault_path", ""))`.
+
+---
+
+## Phase 29 — Seamless Image Pasting
+
+> See SPEC §13. Changes isolated to `echos/ui/editor_tab.py` plus vault_root plumbing.
+
+- [ ] **T-IP01** `echos/ui/editor_tab.py` — `_MarkdownEditor(QTextEdit)` subclass:
+  - Replace `self._editor = QTextEdit()` with `self._editor = _MarkdownEditor()`.
+  - `_MarkdownEditor.__init__`: store `_vault_root: Path | None = None`.
+  - `set_vault_root(root: Path)`: store root.
+  - `_assets_dir() -> Path`: returns `_vault_root / ".assets"` if vault_root set, else `self._file_path.parent / ".assets"` (fallback).
+  - `keyPressEvent`: intercept `Ctrl+V` / `Meta+V`; if clipboard has image → save + insert markdown; else call `super()`.
+  - `dropEvent`: intercept image URL drops; save + insert markdown; else call `super()`.
+
+- [ ] **T-IP02** `echos/ui/editor_tab.py` — plumb vault_root through load:
+  - `EditorTab.load_file(path: str, vault_root: str = "")`: store `vault_root`; call `self._editor.set_vault_root(Path(vault_root))` when non-empty.
+  - `EditorTab` stores `self._vault_root: str = ""`.
+
+- [ ] **T-IP03** `echos/ui/tab_manager.py` + `echos/app.py` — vault_root passthrough:
+  - `TabManager.open_file(path: str, vault_root: str = "")`: pass `vault_root` to `EditorTab.load_file`.
+  - `AppController._on_note_selected`: call `self._window.tab_manager.open_file(path_str, vault_root=self._config.get("vault_path", ""))`.
+
+---
+
+## Phase 30 — Command Palette & Quick Peek
+
+> See SPEC §14. New file `echos/ui/command_palette.py`; hover preview extends `_MarkdownEditor`.
+
+- [ ] **T-CP01** `echos/ui/command_palette.py` — **NEW** `CommandPalette(QDialog)`:
+  - Frameless, 520×360, centred over parent.
+  - `QLineEdit` (search) + `QListWidget` (results).
+  - Constructor args: `vault_path: str`, `commands: list[tuple[str, callable]]`, `parent`.
+  - `_refresh_results(query)`: fuzzy-match query against vault files and command names; populate list.
+  - On Enter / item double-click: if file → emit `file_selected(path)`; if command → call callback.
+  - Close on Escape or `focusOutEvent`.
+  - Fuzzy match: subsequence check with consecutive-run scoring.
+
+- [ ] **T-CP02** `echos/ui/main_window.py` + `echos/app.py` — wire command palette:
+  - `MainWindow._build_menu`: add `self.command_palette_action` with shortcut `Ctrl+Shift+P` in View menu.
+  - `AppController._connect_signals`: `w.command_palette_action.triggered.connect(self._on_command_palette)`.
+  - `AppController._on_command_palette`: build command registry list; open `CommandPalette`; connect `file_selected` to `tab_manager.open_file`.
+
+- [ ] **T-CP03** `echos/ui/editor_tab.py` — `_WikilinkPreview(QWidget)` + hover tracking in `_MarkdownEditor`:
+  - `_WikilinkPreview`: frameless `Qt.WindowType.ToolTip` widget, 360×200, `PANEL_BG` bg + `BORDER_SOFT` border. Header label + `QTextBrowser` showing first 15 lines as rendered HTML.
+  - `_MarkdownEditor.mouseMoveEvent`: detect `[[...]]` under cursor position. Start/reset `_hover_timer` (500 ms). Hide preview if cursor leaves wikilink span.
+  - `_hover_timer` timeout: resolve wikilink stem against vault files (case-insensitive stem match); show `_WikilinkPreview` at cursor + 16 px offset (screen coords).
+  - `_WikilinkPreview.hide()` on `leaveEvent` of both editor and preview widget.
+
+- [ ] **T-CP04** Manual verification:
+  1. `Ctrl+Shift+P` opens command palette centred on window; typing filters files and commands.
+  2. Arrow keys navigate; Enter opens a file in an editor tab.
+  3. Typing `>settings` runs the Settings command.
+  4. Escape closes without action.
+  5. Pasting an image (screenshot via Ctrl+V) saves to `.assets/` and inserts correct markdown.
+  6. Dragging an image file into the editor inserts the markdown link.
+  7. Hover over `[[SomeNote]]` for 500 ms → peek preview appears with rendered content.
+  8. Right-click vault folder → context menu shows New File / New Folder / Rename / Delete.
+  9. Drag a note to a different folder → file moves on disk and tree updates.
+  10. `F2` on selected tree item → inline rename; rename persists on disk and updates open tab title.

@@ -70,18 +70,18 @@ class TabManager:
         The main recording/notes widget placed in the pinned Echoes tab.
     """
 
-    def __init__(self, echoes_widget: QWidget) -> None:
+    def __init__(self, echoes_widget: QWidget | None) -> None:
         self._tabs = QTabWidget()
-        self._tabs.setTabBar(EchosTabBar())
+        self._is_primary = echoes_widget is not None
+        self._tabs.setTabBar(EchosTabBar(is_primary=self._is_primary))
         self._tabs.setStyleSheet(_TAB_QSS)
         self._tabs.setDocumentMode(True)
-        # We manage close buttons ourselves (EchosTabBar paints themed × buttons).
-        # setTabsClosable(False) prevents Qt from creating its own grey button.
         self._tabs.setTabsClosable(False)
         self._tabs.tabBar().tabCloseRequested.connect(self._on_close_requested)
 
-        # Pinned Echoes tab at index 0 — EchosTabBar strips its close button
-        self._tabs.addTab(echoes_widget, "Echos")
+        if echoes_widget is not None:
+            # Pinned Echoes tab at index 0 — EchosTabBar strips its close button
+            self._tabs.addTab(echoes_widget, "Echos")
 
         # path → tab index for open file tabs
         self._path_to_index: dict[str, int] = {}
@@ -101,14 +101,14 @@ class TabManager:
     def tab_widget(self) -> QTabWidget:
         return self._tabs
 
-    def open_file(self, path: str) -> None:
+    def open_file(self, path: str, vault_root: str = "") -> None:
         """Open *path* in an editor tab, or focus it if already open."""
         if path in self._path_to_index:
             self._tabs.setCurrentIndex(self._path_to_index[path])
             return
 
         tab = EditorTab()
-        tab.load_file(path)
+        tab.load_file(path, vault_root=vault_root)
         tab.file_saved.connect(self._on_file_saved)
 
         label = Path(path).name
@@ -117,8 +117,12 @@ class TabManager:
         self._tabs.setCurrentIndex(idx)
 
     def close_tab(self, index: int) -> None:
-        """Close the tab at *index*.  Index 0 (Echoes) is always a no-op."""
-        if index == 0:
+        """Close the tab at *index*.
+
+        In the primary pane index 0 is the pinned Echos tab — never closeable.
+        In secondary panes every tab is a file tab and can be closed.
+        """
+        if index == 0 and self._is_primary:
             return
 
         widget = self._tabs.widget(index)
@@ -149,6 +153,36 @@ class TabManager:
         """Return the currently visible ``EditorTab``, or ``None`` for Echoes tab."""
         w = self._tabs.currentWidget()
         return w if isinstance(w, EditorTab) else None
+
+    def close_all_tabs(self) -> None:
+        """Close all file tabs (no unsaved-changes dialog). Used when pane is closed."""
+        start = 1 if self._is_primary else 0
+        for i in range(self._tabs.count() - 1, start - 1, -1):
+            self._tabs.removeTab(i)
+        self._path_to_index.clear()
+
+    def close_tabs_for_path(self, path: str) -> None:
+        """Silently close any tab whose file is at *path* (no unsaved-changes dialog)."""
+        to_close = [
+            i for i in range(self._tabs.count())
+            if isinstance(self._tabs.widget(i), EditorTab)
+            and self._tabs.widget(i).file_path() == path
+        ]
+        for idx in sorted(to_close, reverse=True):
+            self._path_to_index.pop(path, None)
+            self._tabs.removeTab(idx)
+        self._rebuild_index_map()
+
+    def rename_tab_path(self, old_path: str, new_path: str) -> None:
+        """Update path map and tab label when a vault file is renamed on disk."""
+        if old_path not in self._path_to_index:
+            return
+        idx = self._path_to_index.pop(old_path)
+        self._path_to_index[new_path] = idx
+        self._tabs.setTabText(idx, Path(new_path).name)
+        widget = self._tabs.widget(idx)
+        if isinstance(widget, EditorTab):
+            widget._path = Path(new_path)
 
     # ── Shortcut handlers ──────────────────────────────────────────────────────
 

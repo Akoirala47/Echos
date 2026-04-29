@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import shutil
 import uuid
 from pathlib import Path
 
-from PyQt6.QtCore import QRectF, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QRectF, QSize, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap,
 )
@@ -181,14 +182,20 @@ class _SectionHeader(QWidget):
 
 class _VaultTree(QTreeWidget):
     folder_selected = pyqtSignal(str)
-    note_selected   = pyqtSignal(str)   # emits str(Path)
+    note_selected   = pyqtSignal(str)
     record_here     = pyqtSignal(str)
+    file_deleted    = pyqtSignal(str)        # absolute path removed from disk
+    file_renamed    = pyqtSignal(str, str)   # (old_abs_path, new_abs_path)
 
     _MAX_DEPTH = 5
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._vault_root: Path | None = None
+        self._renaming_item: QTreeWidgetItem | None = None
+        self._old_rename_path: Path | None = None
+        self._old_rename_display: str = ""
+        self._processing_rename: bool = False
 
         self.setHeaderHidden(True)
         self.setIndentation(16)
@@ -230,15 +237,73 @@ class _VaultTree(QTreeWidget):
                 image: none;
             }}
         """)
+
+        # Drag-and-drop
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+
+        # Context menu
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_context_menu)
+
         self.itemClicked.connect(self._on_item_clicked)
+        self.itemChanged.connect(self._on_item_changed)
+
+    # ── Load ──────────────────────────────────────────────────────────────────
 
     def load_vault(self, vault_path: str) -> None:
+        expanded = self._collect_expanded()
         self.clear()
         root = Path(vault_path)
         if not root.is_dir():
             return
         self._vault_root = root
         self._populate(None, root, 0)
+        if expanded:
+            self._restore_expanded(expanded)
+
+    def _collect_expanded(self) -> set[str]:
+        """Return relative paths of all currently expanded folder items."""
+        if not self._vault_root:
+            return set()
+        paths: set[str] = set()
+
+        def _walk(item: QTreeWidgetItem) -> None:
+            if item.isExpanded():
+                data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+                p = data.get("path")
+                if p:
+                    try:
+                        paths.add(str(p.relative_to(self._vault_root)))
+                    except ValueError:
+                        pass
+            for i in range(item.childCount()):
+                _walk(item.child(i))
+
+        for i in range(self.topLevelItemCount()):
+            _walk(self.topLevelItem(i))
+        return paths
+
+    def _restore_expanded(self, expanded: set[str]) -> None:
+        """Re-expand all items whose relative path is in *expanded*."""
+        if not self._vault_root:
+            return
+
+        def _walk(item: QTreeWidgetItem) -> None:
+            data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+            p = data.get("path")
+            if p:
+                try:
+                    if str(p.relative_to(self._vault_root)) in expanded:
+                        item.setExpanded(True)
+                except ValueError:
+                    pass
+            for i in range(item.childCount()):
+                _walk(item.child(i))
+
+        for i in range(self.topLevelItemCount()):
+            _walk(self.topLevelItem(i))
 
     def _populate(self, parent: QTreeWidgetItem | None, path: Path, depth: int) -> None:
         if depth > self._MAX_DEPTH:
@@ -274,8 +339,9 @@ class _VaultTree(QTreeWidget):
                 else:
                     parent.addChild(item)
 
+    # ── Navigation helpers ────────────────────────────────────────────────────
+
     def expand_to_path(self, folder_path: str) -> None:
-        """Expand and select the tree item matching *folder_path* (relative to vault)."""
         parts = [p for p in folder_path.replace("\\", "/").split("/") if p]
         if not parts:
             return
@@ -300,6 +366,8 @@ class _VaultTree(QTreeWidget):
                 return self._find_item_by_parts(child, parts[1:])
         return None
 
+    # ── Click ─────────────────────────────────────────────────────────────────
+
     def _on_item_clicked(self, item: QTreeWidgetItem, _col: int) -> None:
         data = item.data(0, Qt.ItemDataRole.UserRole) or {}
         if data.get("kind") == "folder" and self._vault_root:
@@ -307,6 +375,229 @@ class _VaultTree(QTreeWidget):
             self.folder_selected.emit(rel)
         elif data.get("kind") == "note":
             self.note_selected.emit(str(data["path"]))
+
+    # ── Drag-and-drop ─────────────────────────────────────────────────────────
+
+    def dropEvent(self, event) -> None:
+        source_item = self.currentItem()
+        if not source_item or not self._vault_root:
+            event.ignore()
+            return
+
+        source_data = source_item.data(0, Qt.ItemDataRole.UserRole) or {}
+        source_path: Path | None = source_data.get("path")
+        if not source_path:
+            event.ignore()
+            return
+
+        target_item = self.itemAt(event.position().toPoint())
+        if target_item is None:
+            target_dir = self._vault_root
+        else:
+            target_data = target_item.data(0, Qt.ItemDataRole.UserRole) or {}
+            if target_data.get("kind") == "folder":
+                target_dir = target_data["path"]
+            else:
+                target_dir = target_data["path"].parent
+
+        # No-op: same directory
+        if source_path.parent == target_dir:
+            event.ignore()
+            return
+
+        # Guard: can't drop a folder into itself or a descendant
+        if source_path.is_dir():
+            try:
+                target_dir.relative_to(source_path)
+                event.ignore()
+                return
+            except ValueError:
+                pass
+
+        dest = target_dir / source_path.name
+        if dest.exists():
+            QMessageBox.warning(
+                self, "Move Failed",
+                f"'{source_path.name}' already exists in the target folder."
+            )
+            event.ignore()
+            return
+
+        try:
+            shutil.move(str(source_path), str(dest))
+            event.accept()
+            # VaultWatcher fires tree_changed → _on_vault_changed refreshes the tree
+        except Exception as exc:
+            QMessageBox.warning(self, "Move Failed", str(exc))
+            event.ignore()
+
+    # ── Context menu ──────────────────────────────────────────────────────────
+
+    def _on_context_menu(self, pos: QPoint) -> None:
+        item = self.itemAt(pos)
+        menu = QMenu(self)
+
+        if item is None:
+            if self._vault_root:
+                menu.addAction("New File", lambda: self._create_file(self._vault_root))
+                menu.addAction("New Folder", lambda: self._create_folder(self._vault_root))
+        else:
+            data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+            kind = data.get("kind")
+            path: Path = data.get("path")
+
+            if kind == "folder":
+                menu.addAction("New File", lambda p=path: self._create_file(p))
+                menu.addAction("New Folder", lambda p=path: self._create_folder(p))
+                menu.addSeparator()
+                menu.addAction("Rename", lambda i=item: self._start_rename(i))
+                menu.addSeparator()
+                menu.addAction("Delete Folder", lambda p=path: self._delete_folder(p))
+            elif kind == "note":
+                menu.addAction("Rename", lambda i=item: self._start_rename(i))
+                menu.addSeparator()
+                menu.addAction("Delete File", lambda p=path: self._delete_file(p))
+                menu.addSeparator()
+                menu.addAction("Reveal in Finder", lambda p=path: self._reveal_in_finder(p))
+
+        if not menu.isEmpty():
+            menu.exec(self.viewport().mapToGlobal(pos))
+
+    # ── CRUD helpers ──────────────────────────────────────────────────────────
+
+    def _create_file(self, parent_dir: Path) -> None:
+        name, ok = QInputDialog.getText(self, "New File", "File name:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        if not name.lower().endswith(".md"):
+            name += ".md"
+        path = parent_dir / name
+        try:
+            path.touch()
+        except Exception as exc:
+            QMessageBox.warning(self, "Error", f"Could not create file:\n{exc}")
+
+    def _create_folder(self, parent_dir: Path) -> None:
+        name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        path = parent_dir / name
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            QMessageBox.warning(self, "Error", f"Could not create folder:\n{exc}")
+
+    def _start_rename(self, item: QTreeWidgetItem) -> None:
+        data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        path: Path | None = data.get("path")
+        if not path:
+            return
+        self._renaming_item = item
+        self._old_rename_path = path
+        self._old_rename_display = item.text(0)
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+        self.editItem(item, 0)
+
+    def _on_item_changed(self, item: QTreeWidgetItem, column: int) -> None:
+        if self._processing_rename or item is not self._renaming_item or column != 0:
+            return
+
+        new_display = item.text(0).strip()
+        old_path = self._old_rename_path
+
+        self._renaming_item = None
+
+        # Strip ItemIsEditable once editing finishes
+        self._processing_rename = True
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self._processing_rename = False
+
+        if not new_display or not old_path:
+            self._processing_rename = True
+            item.setText(0, self._old_rename_display)
+            self._processing_rename = False
+            return
+
+        data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        kind = data.get("kind")
+
+        # For notes, display is stem; actual name must keep the extension
+        if kind == "note":
+            new_name = new_display if new_display.lower().endswith(old_path.suffix.lower()) \
+                       else new_display + old_path.suffix
+        else:
+            new_name = new_display
+
+        if new_name == old_path.name:
+            return  # no actual change
+
+        new_path = old_path.parent / new_name
+        if new_path.exists():
+            self._processing_rename = True
+            item.setText(0, self._old_rename_display)
+            self._processing_rename = False
+            QMessageBox.warning(self, "Rename Failed", f"'{new_name}' already exists.")
+            return
+
+        try:
+            shutil.move(str(old_path), str(new_path))
+            new_data = dict(data)
+            new_data["path"] = new_path
+            item.setData(0, Qt.ItemDataRole.UserRole, new_data)
+            display = new_path.stem if kind == "note" else new_path.name
+            self._processing_rename = True
+            item.setText(0, display)
+            self._processing_rename = False
+            self.file_renamed.emit(str(old_path), str(new_path))
+        except Exception as exc:
+            self._processing_rename = True
+            item.setText(0, self._old_rename_display)
+            self._processing_rename = False
+            QMessageBox.warning(self, "Rename Failed", str(exc))
+
+    def _delete_file(self, path: Path) -> None:
+        reply = QMessageBox.question(
+            self, "Delete File",
+            f"Delete '{path.name}'?\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                path.unlink()
+                self.file_deleted.emit(str(path))
+            except Exception as exc:
+                QMessageBox.warning(self, "Error", f"Could not delete:\n{exc}")
+
+    def _delete_folder(self, path: Path) -> None:
+        reply = QMessageBox.question(
+            self, "Delete Folder",
+            f"Delete '{path.name}' and all its contents?\nThis cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                for md in path.rglob("*.md"):
+                    self.file_deleted.emit(str(md))
+                shutil.rmtree(str(path))
+            except Exception as exc:
+                QMessageBox.warning(self, "Error", f"Could not delete folder:\n{exc}")
+
+    @staticmethod
+    def _reveal_in_finder(path: Path) -> None:
+        import subprocess
+        subprocess.run(["open", "-R", str(path)], check=False)
+
+    # ── Keyboard ──────────────────────────────────────────────────────────────
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_F2:
+            item = self.currentItem()
+            if item:
+                self._start_rename(item)
+            return
+        super().keyPressEvent(event)
 
 
 # ── Color swatch ──────────────────────────────────────────────────────────────
@@ -384,8 +675,10 @@ class AddTopicDialog(QDialog):
     def __init__(self, vault_path: str = "", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Add Topic")
-        self.setFixedWidth(360)
+        self.setFixedWidth(380)
         self._vault_path = vault_path
+        from echos.utils.theme import WINDOW_BG
+        self.setStyleSheet(f"QDialog {{ background: {WINDOW_BG}; }}")
 
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("e.g. CS446, Work Meetings, Research")
@@ -553,7 +846,8 @@ class SidebarWidget(QWidget):
     settings_clicked      = pyqtSignal()
     vault_folder_selected = pyqtSignal(str)
     note_selected         = pyqtSignal(str)   # emits str(Path) of .md file
-    graph_view_requested  = pyqtSignal()       # vault icon clicked → show graph
+    file_deleted          = pyqtSignal(str)    # absolute path deleted from disk
+    file_renamed          = pyqtSignal(str, str)  # (old_abs_path, new_abs_path)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -576,20 +870,6 @@ class SidebarWidget(QWidget):
 
     def _build_ui(self) -> None:
         # ── Vault header ──────────────────────────────────────────────────────
-        # The vault icon is a clickable button that opens the Brain View (graph).
-        vault_icon_btn = QPushButton()
-        vault_icon_btn.setFixedSize(18, 18)
-        vault_icon_btn.setFlat(True)
-        vault_icon_btn.setToolTip("Open Brain View")
-        vault_icon_btn.setIcon(_folder_icon(14, "#7e6e57", "#5e5040"))
-        vault_icon_btn.setStyleSheet(
-            "QPushButton { background: transparent; border: none; padding: 2px; "
-            "border-radius: 4px; }"
-            "QPushButton:hover { background: rgba(255,255,255,0.06); }"
-        )
-        vault_icon_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        vault_icon_btn.clicked.connect(self.graph_view_requested)
-
         self._vault_name_lbl = QLabel("No vault")
         self._vault_name_lbl.setStyleSheet(
             f"font-size: 12.5px; font-weight: 600; color: {TEXT};"
@@ -607,7 +887,6 @@ class SidebarWidget(QWidget):
         vhr = QHBoxLayout(vault_hdr)
         vhr.setContentsMargins(12, 0, 12, 0)
         vhr.setSpacing(7)
-        vhr.addWidget(vault_icon_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         vhr.addWidget(self._vault_name_lbl, 1)
         vhr.addWidget(self._vault_path_lbl)
 
@@ -635,6 +914,8 @@ class SidebarWidget(QWidget):
         self._vault_tree = _VaultTree()
         self._vault_tree.folder_selected.connect(self.vault_folder_selected)
         self._vault_tree.note_selected.connect(self.note_selected)
+        self._vault_tree.file_deleted.connect(self.file_deleted)
+        self._vault_tree.file_renamed.connect(self.file_renamed)
         vault_sec_hdr.toggled.connect(self._vault_tree.setVisible)
 
         # T-B66: empty-state label — shown when vault is not set or is empty

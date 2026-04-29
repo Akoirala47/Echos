@@ -161,47 +161,213 @@ def main() -> None:
     app.setPalette(pal)
 
     app.setStyleSheet(f"""
+        /* ── Global font ───────────────────────────────────────────────── */
         * {{
             font-family: -apple-system, 'Inter', 'Helvetica Neue', sans-serif;
         }}
-        QMainWindow, QDialog {{
+
+        /* ── Windows & dialogs ─────────────────────────────────────────── */
+        QMainWindow {{
             background: {WINDOW_BG};
         }}
+        QDialog {{
+            background: {WINDOW_BG};
+        }}
+        QMessageBox {{
+            background: {WINDOW_BG};
+        }}
+        QMessageBox QLabel {{
+            color: {TEXT};
+            font-size: 13px;
+            line-height: 1.5;
+            background: transparent;
+        }}
+
+        /* ── Buttons ───────────────────────────────────────────────────── */
+        QPushButton {{
+            background: {SIDEBAR_BG};
+            color: {TEXT};
+            border: 1px solid {BORDER};
+            border-radius: 6px;
+            padding: 5px 16px;
+            font-size: 12px;
+            font-weight: 500;
+            min-height: 24px;
+        }}
+        QPushButton:hover {{
+            background: #e8e5dc;
+            border-color: #c9c7bc;
+        }}
+        QPushButton:pressed {{
+            background: #dddad0;
+            border-color: #b8b6ac;
+        }}
+        QPushButton:disabled {{
+            background: #edeae2;
+            color: {TEXT_FAINT};
+            border-color: {BORDER_SOFT};
+        }}
+        QPushButton:default {{
+            background: #fff4ed;
+            border: 1.5px solid {ACCENT};
+            color: {ACCENT};
+            font-weight: 600;
+        }}
+        QPushButton:default:hover {{
+            background: #ffe8d6;
+        }}
+        QPushButton:default:pressed {{
+            background: #ffd4b8;
+        }}
+
+        /* ── Text inputs ────────────────────────────────────────────────── */
         QTextEdit, QTextBrowser {{
             background: {PANEL_BG};
             color: {TEXT};
             border: none;
-            selection-background-color: rgba(194,65,12,0.25);
+            selection-background-color: rgba(194,65,12,0.22);
         }}
         QLineEdit {{
             background: {PANEL_BG};
             color: {TEXT};
             border: 1px solid {BORDER_SOFT};
-            border-radius: 5px;
-            padding: 4px 8px;
-            selection-background-color: rgba(194,65,12,0.25);
+            border-radius: 6px;
+            padding: 5px 9px;
+            selection-background-color: rgba(194,65,12,0.22);
         }}
         QLineEdit:focus {{
             border-color: {ACCENT};
         }}
-        QSpinBox {{
+        QLineEdit:disabled {{
+            background: {SIDEBAR_BG};
+            color: {TEXT_FAINT};
+        }}
+        QPlainTextEdit {{
             background: {PANEL_BG};
             color: {TEXT};
             border: 1px solid {BORDER_SOFT};
-            border-radius: 4px;
-            padding: 2px 6px;
+            border-radius: 6px;
+            padding: 5px;
+            selection-background-color: rgba(194,65,12,0.22);
         }}
-        QComboBox {{
-            background: {SIDEBAR_BG};
+        QPlainTextEdit:focus {{
+            border-color: {ACCENT};
+        }}
+
+        /* ── Spin boxes ─────────────────────────────────────────────────── */
+        QSpinBox, QDoubleSpinBox {{
+            background: {PANEL_BG};
             color: {TEXT};
             border: 1px solid {BORDER_SOFT};
-            border-radius: 5px;
+            border-radius: 6px;
+            padding: 4px 6px;
+        }}
+        QSpinBox:focus, QDoubleSpinBox:focus {{
+            border-color: {ACCENT};
+        }}
+        QSpinBox::up-button, QSpinBox::down-button,
+        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+            background: transparent;
+            border: none;
+            width: 14px;
+        }}
+
+        /* ── Combo box ──────────────────────────────────────────────────── */
+        QComboBox {{
+            background: {PANEL_BG};
+            color: {TEXT};
+            border: 1px solid {BORDER_SOFT};
+            border-radius: 6px;
+            padding: 4px 9px;
+        }}
+        QComboBox:focus {{
+            border-color: {ACCENT};
+        }}
+        QComboBox:hover {{
+            border-color: #c9c7bc;
+        }}
+        QComboBox::drop-down {{
+            border: none;
+            width: 20px;
+        }}
+        QComboBox QAbstractItemView {{
+            background: {PANEL_BG};
+            color: {TEXT};
+            border: 1px solid {BORDER};
+            border-radius: 6px;
+            selection-background-color: {SELECTED_STRONG};
+            outline: 0;
+            padding: 2px;
+        }}
+
+        /* ── Group boxes ────────────────────────────────────────────────── */
+        QGroupBox {{
+            font-size: 11px;
+            font-weight: 600;
+            color: {TEXT_MUTED};
+            border: 1px solid {BORDER_SOFT};
+            border-radius: 8px;
+            margin-top: 14px;
+            padding: 10px 8px 8px 8px;
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            left: 10px;
+            padding: 0 5px;
+            background: {WINDOW_BG};
+            color: {TEXT_MUTED};
+        }}
+
+        /* ── Labels ─────────────────────────────────────────────────────── */
+        QLabel {{
+            color: {TEXT};
+            background: transparent;
+        }}
+
+        /* ── Checkboxes & radios ────────────────────────────────────────── */
+        QCheckBox {{
+            color: {TEXT};
+            spacing: 7px;
+        }}
+        QCheckBox::indicator {{
+            width: 15px; height: 15px;
+            border: 1.5px solid {BORDER};
+            border-radius: 4px;
+            background: {PANEL_BG};
+        }}
+        QCheckBox::indicator:checked {{
+            background: {ACCENT};
+            border-color: {ACCENT};
+            image: url("");
+        }}
+        QCheckBox::indicator:hover {{
+            border-color: {ACCENT};
+        }}
+        QRadioButton {{
+            color: {TEXT};
+            spacing: 7px;
+        }}
+
+        /* ── Key sequence edit ──────────────────────────────────────────── */
+        QKeySequenceEdit {{
+            background: {PANEL_BG};
+            color: {TEXT};
+            border: 1px solid {BORDER_SOFT};
+            border-radius: 6px;
             padding: 4px 8px;
         }}
+
+        /* ── Menus ──────────────────────────────────────────────────────── */
         QMenuBar {{
             background: {WINDOW_BG};
             color: {TEXT};
             border-bottom: 1px solid {BORDER_SOFT};
+        }}
+        QMenuBar::item {{
+            background: transparent;
+            padding: 4px 10px;
+            border-radius: 4px;
         }}
         QMenuBar::item:selected {{
             background: rgba(194,65,12,0.10);
@@ -211,67 +377,74 @@ def main() -> None:
             color: {TEXT};
             border: 1px solid {BORDER};
             border-radius: 8px;
+            padding: 3px;
+        }}
+        QMenu::item {{
+            padding: 6px 20px 6px 14px;
+            border-radius: 5px;
         }}
         QMenu::item:selected {{
             background: rgba(194,65,12,0.10);
+            color: {TEXT};
         }}
+        QMenu::separator {{
+            height: 1px;
+            background: {BORDER_SOFT};
+            margin: 3px 8px;
+        }}
+
+        /* ── Scrollbars ─────────────────────────────────────────────────── */
         QScrollBar:vertical {{
-            width: 8px; background: transparent; margin: 0; border: none;
+            width: 7px; background: transparent; margin: 0; border: none;
         }}
         QScrollBar::handle:vertical {{
-            background: rgba(0,0,0,0.12); border-radius: 4px; min-height: 30px;
+            background: rgba(0,0,0,0.13); border-radius: 3px; min-height: 28px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background: rgba(0,0,0,0.20);
         }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
         QScrollBar:horizontal {{
-            height: 8px; background: transparent; margin: 0; border: none;
+            height: 7px; background: transparent; margin: 0; border: none;
         }}
         QScrollBar::handle:horizontal {{
-            background: rgba(0,0,0,0.12); border-radius: 4px; min-width: 30px;
+            background: rgba(0,0,0,0.13); border-radius: 3px; min-width: 28px;
+        }}
+        QScrollBar::handle:horizontal:hover {{
+            background: rgba(0,0,0,0.20);
         }}
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; border: none; }}
+
+        /* ── Splitter ───────────────────────────────────────────────────── */
         QSplitter::handle {{
             background: {BORDER_SOFT};
+        }}
+
+        /* ── Tab bars (settings dialog) ────────────────────────────────── */
+        QTabWidget::pane {{
+            border: 1px solid {BORDER_SOFT};
+            border-top: none;
+            background: {PANEL_BG};
         }}
         QTabBar::tab {{
             background: {SIDEBAR_BG};
             color: {TEXT_MUTED};
             border: 1px solid {BORDER_SOFT};
-            padding: 6px 14px;
+            border-bottom: none;
+            border-radius: 5px 5px 0 0;
+            padding: 6px 16px;
+            font-size: 12px;
         }}
         QTabBar::tab:selected {{
             background: {PANEL_BG};
             color: {TEXT};
-            border-bottom: none;
-        }}
-        QTabWidget::pane {{
-            border: 1px solid {BORDER_SOFT};
-            background: {PANEL_BG};
-        }}
-        QToolTip {{
-            background: #fffae8;
-            color: {TEXT};
-            border: 1px solid {BORDER};
-            border-radius: 4px;
-            padding: 4px 8px;
-            font-size: 12px;
-        }}
-        QCheckBox {{
-            color: {TEXT};
-            spacing: 6px;
-        }}
-        QRadioButton {{
-            color: {TEXT};
-            spacing: 6px;
-        }}
-        QGroupBox {{
-            color: {TEXT_MUTED};
-            border: 1px solid {BORDER_SOFT};
-            border-radius: 6px;
-            margin-top: 8px;
-            padding-top: 8px;
-            font-size: 11px;
             font-weight: 600;
         }}
+        QTabBar::tab:hover:!selected {{
+            background: #eae8e0;
+        }}
+
+        /* ── Sliders ────────────────────────────────────────────────────── */
         QSlider::groove:horizontal {{
             height: 4px;
             background: {BORDER_SOFT};
@@ -287,6 +460,8 @@ def main() -> None:
             background: {ACCENT};
             border-radius: 2px;
         }}
+
+        /* ── Progress bars ──────────────────────────────────────────────── */
         QProgressBar {{
             background: {BORDER_SOFT};
             border: none;
@@ -298,6 +473,21 @@ def main() -> None:
         QProgressBar::chunk {{
             background: {ACCENT};
             border-radius: 4px;
+        }}
+
+        /* ── Tooltips ───────────────────────────────────────────────────── */
+        QToolTip {{
+            background: #fffae8;
+            color: {TEXT};
+            border: 1px solid {BORDER};
+            border-radius: 5px;
+            padding: 5px 9px;
+            font-size: 12px;
+        }}
+
+        /* ── Dialog button box ──────────────────────────────────────────── */
+        QDialogButtonBox QPushButton {{
+            min-width: 72px;
         }}
     """)
 
