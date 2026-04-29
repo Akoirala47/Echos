@@ -63,20 +63,29 @@ APP = ["echos/main.py"]
 
 
 def _extra_data_files() -> list:
-    """Copy sounddevice and soundfile data directories into the bundle root.
+    """Copy sounddevice and soundfile data directories into lib/python3.11/ inside the bundle.
 
-    These directories contain cffi module definitions and bundled dylibs that
-    sounddevice/soundfile locate via os.path.dirname(__file__).  Having them
-    as real filesystem directories (not inside python3XX.zip) ensures the
-    packages can find their data at runtime.
+    soundfile locates _soundfile_data via os.path.dirname(soundfile.__file__),
+    i.e. it expects _soundfile_data to be a sibling of soundfile/__init__.py.
+    py2app places Python packages in Contents/Resources/lib/python3.11/, so
+    the data dirs must live there too — not at the bundle root.
+
+    The dest prefix 'lib/python3.11' is relative to Contents/Resources/ and
+    matches what py2app uses for site-packages.
     """
+    import platform
     import site
+    import sys
+    ver = f"{sys.version_info.major}.{sys.version_info.minor}"
+    dest = f"lib/python{ver}"
     extras = []
+    checked = set()
     for sp in site.getsitepackages():
         for data_dir in ("_sounddevice_data", "_soundfile_data"):
             full = os.path.join(sp, data_dir)
-            if os.path.isdir(full):
-                extras.append(("", [full]))
+            if os.path.isdir(full) and full not in checked:
+                checked.add(full)
+                extras.append((dest, [full]))
     return extras
 
 
@@ -189,6 +198,16 @@ OPTIONS = {
     # Do not zip Python packages — soundfile's bundled libsndfile_arm64.dylib
     # must live on the real filesystem (dlopen cannot open paths inside a zip).
     "no_zip": True,
+    # py2app 0.28+ respects zip_unsafe as a per-package blocklist; older
+    # versions honour no_zip alone.  List both to cover all versions.
+    "zip_unsafe": [
+        "soundfile",
+        "sounddevice",
+        "_soundfile",
+        "_sounddevice",
+        "cffi",
+        "_cffi_backend",
+    ],
     # Bundle libsndfile + libportaudio into Contents/Frameworks so soundfile
     # and sounddevice can find them even when no_zip is not fully honoured.
     "frameworks": _collect_native_libs(),
