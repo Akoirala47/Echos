@@ -1,7 +1,14 @@
 from __future__ import annotations
 
-_SYSTEM_INSTRUCTION = """\
+_NO_THINKING = (
+    "IMPORTANT: Do NOT use <thinking>, <thought>, or any internal reasoning tags. "
+    "Begin your response immediately with the first character of the markdown output."
+)
+
+_SYSTEM_INSTRUCTION = f"""\
 You are a concise note-taker. Convert spoken transcripts into clean, structured Obsidian-compatible markdown.
+
+{_NO_THINKING}
 
 Output ONLY the markdown document \u2014 start immediately with the # title heading.
 No preamble, no reasoning, no explanation, no meta-commentary about the transcript.
@@ -16,8 +23,10 @@ Structure:
 - End with a ## Key Takeaways section\
 """
 
-_CONTINUATION_SYSTEM_INSTRUCTION = """\
+_CONTINUATION_SYSTEM_INSTRUCTION = f"""\
 You are a concise note-taker extending an existing notes document.
+
+{_NO_THINKING}
 
 Output ONLY additional markdown \u2014 do NOT repeat content already in the notes.
 Continue directly from where the existing notes left off.

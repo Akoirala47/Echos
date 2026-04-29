@@ -62,10 +62,15 @@ class AppController:
         self._lecture_num: int = 1
         self._audio_worker: AudioWorker | None = None
         self._notes_worker: NotesWorker | None = None
+        self._auto_gen_worker: NotesWorker | None = None
         self._model_load_worker: ModelDownloadWorker | None = None
 
         # Fingerprint stored after notes generation; used at save time
         self._notes_fingerprint: str = ""
+
+        # Real-time auto-gen tracking
+        self._transcript_processed_up_to: int = 0  # chars already sent to auto-gen
+        self._auto_gen_in_progress: bool = False
 
         # Phase 22/23 — vault indexing (created lazily when vault path is set)
         self._vault_index: VaultIndex | None = None
@@ -485,6 +490,10 @@ class AppController:
         self._window.notes_panel.set_generate_enabled(False)
         self._window.save_note_action.setEnabled(False)
 
+        # Reset auto-gen tracking for the new session
+        self._transcript_processed_up_to = 0
+        self._auto_gen_in_progress = False
+
         self._audio_worker = AudioWorker(
             model_manager=self._model_manager,
             chunk_seconds=float(self._config.get("chunk_seconds", 6)),
@@ -493,6 +502,7 @@ class AppController:
         self._audio_worker.transcript_chunk.connect(
             self._window.transcript_panel.append_text
         )
+        self._audio_worker.transcript_chunk.connect(self._on_transcript_chunk_received)
         self._audio_worker.audio_level.connect(
             self._window.record_bar.waveform.set_level
         )
@@ -514,7 +524,17 @@ class AppController:
         self._end_power_assertion()
         self._set_dock_badge(False)
 
-        self._window.notes_panel.set_generate_enabled(True)
+        # If auto-gen already covered the full transcript and isn't still running,
+        # go straight to NOTES_DONE so the Save button appears immediately.
+        full_transcript = self._window.transcript_panel.get_text()
+        remaining = full_transcript[self._transcript_processed_up_to:].strip()
+        existing_notes = self._window.notes_panel.get_notes().strip()
+
+        if existing_notes and not remaining and not self._auto_gen_in_progress:
+            self._set_state(AppState.NOTES_DONE)
+            self._window.save_note_action.setEnabled(True)
+        else:
+            self._window.notes_panel.set_generate_enabled(True)
 
     def _pause_recording(self) -> None:
         if self._audio_worker:
@@ -527,6 +547,93 @@ class AppController:
             self._audio_worker.resume()
         self._set_state(AppState.RECORDING)
         self._begin_power_assertion()
+
+    # ------------------------------------------------------------------
+    # Real-time auto-gen (fires during recording at each token threshold)
+    # ------------------------------------------------------------------
+
+    def _on_transcript_chunk_received(self, text: str) -> None:
+        """Called for every new transcription chunk during recording."""
+        from echos.core.notes_worker import CHUNK_CHAR_LIMIT
+
+        if self._state not in (AppState.RECORDING, AppState.PAUSED):
+            return
+        if self._auto_gen_in_progress:
+            return
+
+        api_key = self._config.get("google_api_key", "")
+        if not api_key:
+            return
+
+        full_transcript = self._window.transcript_panel.get_text()
+        unprocessed_len = len(full_transcript) - self._transcript_processed_up_to
+        if unprocessed_len >= CHUNK_CHAR_LIMIT:
+            self._trigger_auto_notes()
+
+    def _trigger_auto_notes(self) -> None:
+        """Fire a NotesWorker for the unprocessed portion of the transcript."""
+        api_key = self._config.get("google_api_key", "")
+        if not api_key:
+            return
+
+        full_transcript = self._window.transcript_panel.get_text()
+        new_text = full_transcript[self._transcript_processed_up_to:].strip()
+        if not new_text:
+            return
+
+        existing_notes = self._window.notes_panel.get_notes().strip()
+        is_continuation = bool(existing_notes)
+        notes_tail = existing_notes[-400:] if len(existing_notes) > 400 else existing_notes
+
+        # Advance the processed pointer before launching so overlapping
+        # transcript chunks don't trigger a second concurrent worker.
+        self._transcript_processed_up_to = len(full_transcript)
+        self._auto_gen_in_progress = True
+
+        self._window.notes_panel.show_auto_gen_banner()
+
+        course = self._current_course or {}
+        today = _date.today().isoformat()
+
+        self._auto_gen_worker = NotesWorker(
+            transcript=new_text,
+            course_name=course.get("name", "Unknown"),
+            lecture_num=self._lecture_num,
+            date=today,
+            api_key=api_key,
+            model_id=self._config.get("gemma_model", "gemma-4-31b-it"),
+            temperature=float(self._config.get("temperature", 0.2)),
+            max_tokens=int(self._config.get("max_tokens", 8192)),
+            is_continuation=is_continuation,
+            existing_notes_tail=notes_tail,
+        )
+        self._auto_gen_worker.chunk_ready.connect(self._window.notes_panel.append_chunk)
+        self._auto_gen_worker.done.connect(self._on_auto_notes_done)
+        self._auto_gen_worker.error.connect(self._on_auto_notes_error)
+        self._auto_gen_worker.start()
+
+    def _on_auto_notes_done(self, added_text: str) -> None:
+        """Auto-gen completed — update panel; flip to NOTES_DONE if session ended."""
+        self._auto_gen_in_progress = False
+        self._window.notes_panel.hide_auto_gen_banner()
+        self._window.notes_panel.set_notes(self._window.notes_panel.get_notes())
+        self._window.notes_panel._regen_btn.setEnabled(True)
+
+        # Session ended while this auto-gen was still in flight — enable saving now.
+        if self._state == AppState.STOPPED:
+            full_transcript = self._window.transcript_panel.get_text()
+            remaining = full_transcript[self._transcript_processed_up_to:].strip()
+            if not remaining:
+                self._set_state(AppState.NOTES_DONE)
+                self._window.save_note_action.setEnabled(True)
+            else:
+                self._window.notes_panel.set_generate_enabled(True)
+
+    def _on_auto_notes_error(self, message: str) -> None:
+        self._auto_gen_in_progress = False
+        self._window.notes_panel.hide_auto_gen_banner()
+        logger.warning("Auto-gen failed: %s", message)
+        self._window.status_bar_widget.set_status("#E74C3C", f"Auto-gen failed: {message[:60]}")
 
     # ------------------------------------------------------------------
     # Notes generation
@@ -547,23 +654,42 @@ class AppController:
             )
             return
 
-        transcript = self._window.transcript_panel.get_text()
-        if not transcript.strip():
+        full_transcript = self._window.transcript_panel.get_text()
+        if not full_transcript.strip():
             show_warning(
                 self._window, "No Transcript",
                 "There is no transcript to generate notes from."
             )
             return
 
+        # If a regeneration was requested (custom_instruction provided), process
+        # the full transcript from scratch and clear existing notes.
+        if custom_instruction:
+            transcript = full_transcript
+            is_continuation = False
+            notes_tail = ""
+            self._window.notes_panel.clear()
+            self._transcript_processed_up_to = 0
+        else:
+            # Normal "Generate Notes" — only process the remaining unprocessed delta.
+            transcript = full_transcript[self._transcript_processed_up_to:].strip()
+            existing_notes = self._window.notes_panel.get_notes().strip()
+            is_continuation = bool(existing_notes)
+            notes_tail = existing_notes[-400:] if len(existing_notes) > 400 else existing_notes
+            if not transcript:
+                # Nothing new to process — if notes exist, just enable saving.
+                if self._window.notes_panel.get_notes().strip():
+                    self._set_state(AppState.NOTES_DONE)
+                    self._window.save_note_action.setEnabled(True)
+                return
+
         course = self._current_course or {}
         today = _date.today().isoformat()
 
-        self._window.notes_panel.clear()
         self._window.notes_panel.set_generating(True)
         self._set_state(AppState.GENERATING)
         self._notes_fingerprint = ""
 
-        # Collect existing fingerprints from VaultIndex for concept reuse
         existing_fps: list[str] = []
         if self._vault_index is not None:
             try:
@@ -585,6 +711,8 @@ class AppController:
             temperature=float(self._config.get("temperature", 0.2)),
             max_tokens=int(self._config.get("max_tokens", 8192)),
             custom_instruction=custom_instruction,
+            is_continuation=is_continuation,
+            existing_notes_tail=notes_tail,
             fingerprint_engine=self._fingerprint_engine,
             existing_fingerprints=existing_fps,
         )
@@ -592,13 +720,21 @@ class AppController:
         self._notes_worker.done.connect(self._on_notes_done)
         self._notes_worker.error.connect(self._on_notes_error)
         self._notes_worker.start()
+        self._transcript_processed_up_to = len(full_transcript)
 
-    def _on_notes_done(self, full_text: str) -> None:
-        self._window.notes_panel.set_notes(full_text)
+    def _on_notes_done(self, added_text: str) -> None:
+        # Compose the full notes: everything already in the panel + the new addition.
+        existing = self._window.notes_panel.get_notes().strip()
+        if existing and added_text.strip() and added_text.strip() not in existing:
+            full_notes = existing + "\n\n" + added_text.strip()
+        elif added_text.strip():
+            full_notes = added_text.strip()
+        else:
+            full_notes = existing
+        self._window.notes_panel.set_notes(full_notes)
         self._window.notes_panel.set_generating(False)
         self._set_state(AppState.NOTES_DONE)
         self._window.save_note_action.setEnabled(True)
-        # Capture fingerprint generated in the same worker thread
         if self._notes_worker is not None:
             self._notes_fingerprint = getattr(self._notes_worker, "fingerprint_str", "")
 
@@ -696,8 +832,16 @@ class AppController:
                 return
             self._stop_recording()
 
+        # Cancel any in-flight auto-gen worker
+        if self._auto_gen_worker is not None and self._auto_gen_worker.isRunning():
+            self._auto_gen_worker.quit()
+            self._auto_gen_worker = None
+        self._auto_gen_in_progress = False
+        self._transcript_processed_up_to = 0
+
         self._window.transcript_panel.clear()
         self._window.notes_panel.clear()
+        self._window.notes_panel.hide_auto_gen_banner()
         self._window.record_bar.reset_timer()
         self._window.notes_panel.set_generate_enabled(False)
         self._window.save_note_action.setEnabled(False)

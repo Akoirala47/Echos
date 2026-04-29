@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from echos.utils.theme import (
+    ACCENT, ACCENT_SOFT,
     border_soft, panel_bg, text, text_faint, text_muted,
     ready_color, notes_css,
 )
@@ -167,11 +168,21 @@ class NotesPanel(QWidget):
         footer_widget.setStyleSheet(f"border-top: 1px solid {border_soft()};")
         footer_widget.setLayout(footer_row)
 
+        # ── Auto-gen notification banner ──────────────────────────────────────
+        self._banner = QLabel()
+        self._banner.setStyleSheet(
+            f"QLabel {{ background: {ACCENT_SOFT}; color: {ACCENT};"
+            f" font-size: 11px; font-weight: 600; padding: 5px 14px;"
+            f" border-bottom: 1px solid {ACCENT}22; }}"
+        )
+        self._banner.hide()
+
         # ── Outer layout ──────────────────────────────────────────────────────
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         layout.addWidget(header_widget)
+        layout.addWidget(self._banner)
         layout.addWidget(self._stack, 1)
         layout.addWidget(footer_widget)
         self.setLayout(layout)
@@ -219,6 +230,14 @@ class NotesPanel(QWidget):
 
     def set_model_name(self, name: str) -> None:
         self._model_chip.setText(f"{name} · streaming")
+
+    def show_auto_gen_banner(self, msg: str = "") -> None:
+        """Show the amber notification strip above the notes content."""
+        self._banner.setText(msg or "⚡ Auto-generating notes from new transcript…")
+        self._banner.show()
+
+    def hide_auto_gen_banner(self) -> None:
+        self._banner.hide()
 
     # ── Internal slots ─────────────────────────────────────────────────────────
 

@@ -178,14 +178,13 @@ class FingerprintEngine:
         model_id: str,
     ) -> dict:
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types
         except ImportError:
-            logger.warning("google-generativeai not installed; skipping fingerprint LLM call")
+            logger.warning("google-genai not installed; skipping fingerprint LLM call")
             return {"concepts": [], "domains": []}
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_id, system_instruction=_SYSTEM_PROMPT)
-
+        client = genai.Client(api_key=api_key)
         existing_str = (
             "\n".join(existing_fingerprints[:50]) if existing_fingerprints else "(none)"
         )
@@ -194,7 +193,14 @@ class FingerprintEngine:
             f"Note body:\n{note_body[:3000]}"
         )
         try:
-            response = model.generate_content(prompt)
+            from echos.core.notes_worker import _supports_thinking_budget
+            cfg_kw: dict = dict(system_instruction=_SYSTEM_PROMPT)
+            if _supports_thinking_budget(model_id):
+                cfg_kw["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            response = client.models.generate_content(
+                model=model_id, contents=prompt,
+                config=types.GenerateContentConfig(**cfg_kw),
+            )
             text = re.sub(
                 r"^```(?:json)?\s*|\s*```$", "", response.text.strip(), flags=re.MULTILINE
             ).strip()
@@ -207,15 +213,22 @@ class FingerprintEngine:
         self, concepts: list[str], api_key: str, model_id: str
     ) -> list[str]:
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types
         except ImportError:
             return concepts[:_MAX_UNIQUE_CONCEPTS]
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_id)
+        client = genai.Client(api_key=api_key)
         prompt = _CONSOLIDATION_PROMPT.format(concepts=json.dumps(concepts))
         try:
-            response = model.generate_content(prompt)
+            from echos.core.notes_worker import _supports_thinking_budget
+            cfg_kw: dict = {}
+            if _supports_thinking_budget(model_id):
+                cfg_kw["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            response = client.models.generate_content(
+                model=model_id, contents=prompt,
+                config=types.GenerateContentConfig(**cfg_kw) if cfg_kw else None,
+            )
             text = re.sub(
                 r"^```(?:json)?\s*|\s*```$", "", response.text.strip(), flags=re.MULTILINE
             ).strip()

@@ -36,12 +36,17 @@ class _ApiKeyValidator(QThread):
 
     def run(self) -> None:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=self._api_key)
-            model = genai.GenerativeModel(self._model_id)
-            model.generate_content(
-                "Reply with one word: ok",
-                generation_config=genai.types.GenerationConfig(max_output_tokens=5),
+            from google import genai
+            from google.genai import types
+            from echos.core.notes_worker import _supports_thinking_budget
+            client = genai.Client(api_key=self._api_key)
+            cfg_kw: dict = dict(max_output_tokens=5)
+            if _supports_thinking_budget(self._model_id):
+                cfg_kw["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            client.models.generate_content(
+                model=self._model_id,
+                contents="Reply with one word: ok",
+                config=types.GenerateContentConfig(**cfg_kw),
             )
             self.validated.emit(True, "")
         except Exception as exc:
