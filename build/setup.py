@@ -198,16 +198,6 @@ OPTIONS = {
     # Do not zip Python packages — soundfile's bundled libsndfile_arm64.dylib
     # must live on the real filesystem (dlopen cannot open paths inside a zip).
     "no_zip": True,
-    # py2app 0.28+ respects zip_unsafe as a per-package blocklist; older
-    # versions honour no_zip alone.  List both to cover all versions.
-    "zip_unsafe": [
-        "soundfile",
-        "sounddevice",
-        "_soundfile",
-        "_sounddevice",
-        "cffi",
-        "_cffi_backend",
-    ],
     # Bundle libsndfile + libportaudio into Contents/Frameworks so soundfile
     # and sounddevice can find them even when no_zip is not fully honoured.
     "frameworks": _collect_native_libs(),
