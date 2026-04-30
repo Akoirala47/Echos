@@ -57,6 +57,68 @@ fi
 echo "Built: $APP_PATH"
 
 # ---------------------------------------------------------------------------
+# Step 3b — Explicitly copy native dylibs into Contents/Frameworks/
+# py2app's 'frameworks' and 'no_zip' options are not always honoured by all
+# versions.  Belt-and-suspenders: find and copy libsndfile + libportaudio
+# right after the py2app step so the bundle is always self-contained.
+# ---------------------------------------------------------------------------
+FRAMEWORKS_DIR="${APP_PATH}/Contents/Frameworks"
+mkdir -p "$FRAMEWORKS_DIR"
+
+echo ""
+echo "=== [3b] Copying native audio dylibs to Contents/Frameworks ==="
+
+# Find libsndfile — prefer the wheel-bundled arm64 dylib, fall back to Homebrew
+SNDFILE_SRC="$(python3 - <<'PYEOF'
+import glob, os, site, sys
+candidates = []
+# Wheel-bundled copy (site-packages/_soundfile_data/)
+for sp in site.getsitepackages():
+    candidates += glob.glob(os.path.join(sp, "_soundfile_data", "*.dylib"))
+# Homebrew fallbacks
+for p in ["/opt/homebrew/lib/libsndfile.dylib", "/opt/homebrew/lib/libsndfile.1.dylib",
+          "/usr/local/lib/libsndfile.dylib", "/usr/local/lib/libsndfile.1.dylib"]:
+    if os.path.isfile(p):
+        candidates.append(p)
+print(candidates[0] if candidates else "")
+PYEOF
+)"
+
+if [[ -z "$SNDFILE_SRC" ]]; then
+  echo "ERROR: Cannot find libsndfile dylib. Install with: brew install libsndfile"
+  exit 1
+fi
+cp -f "$SNDFILE_SRC" "$FRAMEWORKS_DIR/libsndfile.dylib"
+echo "  Copied libsndfile: $SNDFILE_SRC → $FRAMEWORKS_DIR/libsndfile.dylib"
+
+# Find libportaudio
+PORTAUDIO_SRC="$(python3 - <<'PYEOF'
+import glob, os, site, sys
+candidates = []
+for sp in site.getsitepackages():
+    candidates += glob.glob(os.path.join(sp, "_sounddevice_data", "portaudio-binaries", "*.dylib"))
+    candidates += glob.glob(os.path.join(sp, "_sounddevice_data", "*.dylib"))
+for p in ["/opt/homebrew/lib/libportaudio.dylib", "/opt/homebrew/lib/libportaudio.2.dylib",
+          "/usr/local/lib/libportaudio.dylib", "/usr/local/lib/libportaudio.2.dylib"]:
+    if os.path.isfile(p):
+        candidates.append(p)
+print(candidates[0] if candidates else "")
+PYEOF
+)"
+
+if [[ -n "$PORTAUDIO_SRC" ]]; then
+  cp -f "$PORTAUDIO_SRC" "$FRAMEWORKS_DIR/libportaudio.dylib"
+  echo "  Copied libportaudio: $PORTAUDIO_SRC → $FRAMEWORKS_DIR/libportaudio.dylib"
+else
+  echo "  WARNING: libportaudio not found — audio recording may fail"
+fi
+
+# Sanity check
+echo ""
+echo "Contents/Frameworks dylibs:"
+ls -lh "$FRAMEWORKS_DIR"/*.dylib 2>/dev/null || echo "  (none found)"
+
+# ---------------------------------------------------------------------------
 # (Optional) Code-sign the .app
 # Uncomment and fill in your Developer ID to sign before notarisation.
 # ---------------------------------------------------------------------------

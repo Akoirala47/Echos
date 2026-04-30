@@ -17,44 +17,90 @@ from setuptools import setup
 def _collect_native_libs() -> list[str]:
     """Locate libsndfile and libportaudio dylibs for bundling into Contents/Frameworks.
 
-    sounddevice (portaudio) and soundfile (libsndfile) both bundle their own
-    dylibs inside their wheel's data directory.  py2app copies Python files
-    into python3XX.zip where dlopen() cannot reach them, so we pull the dylibs
-    out and place them in Contents/Frameworks/ explicitly.  The _fix_* helpers
-    in main.py then intercept ctypes.util.find_library so the packages find
-    the bundled copies at runtime.
+    soundfile is a single .py file (not a package), so soundfile.__file__ is
+    site-packages/soundfile.py and _soundfile_data lives right next to it at
+    site-packages/_soundfile_data/.
+
+    sounddevice IS a package, so _sounddevice_data lives at the site-packages
+    level as well (not inside the sounddevice/ subdirectory).
     """
+    import site as _site
     paths: list[str] = []
 
     def _add(path: str) -> None:
         if os.path.isfile(path) and path not in paths:
+            print(f"[setup] bundling native lib: {path}")
             paths.append(path)
 
-    # soundfile → libsndfile
+    # ---- soundfile → libsndfile ----------------------------------------
+    # Strategy 1: find via soundfile module (works in any venv/system Python)
     try:
         import soundfile  # noqa: WPS433
-        sf_data = os.path.join(os.path.dirname(soundfile.__file__), "_soundfile_data")
+        # soundfile.__file__ == site-packages/soundfile.py  (single-file module)
+        # so dirname gives us site-packages/ directly.
+        sf_site = os.path.dirname(soundfile.__file__)          # site-packages/
+        sf_data = os.path.join(sf_site, "_soundfile_data")    # site-packages/_soundfile_data/
         for p in glob.glob(os.path.join(sf_data, "*.dylib")):
             _add(p)
+    except Exception as e:
+        print(f"[setup] WARNING: could not locate soundfile data dir: {e}")
+
+    # Strategy 2: walk all site-packages dirs
+    try:
+        for sp in _site.getsitepackages():
+            for p in glob.glob(os.path.join(sp, "_soundfile_data", "*.dylib")):
+                _add(p)
     except Exception:
         pass
-    for p in ("/opt/homebrew/lib/libsndfile.dylib", "/opt/homebrew/lib/libsndfile.1.dylib",
-              "/usr/local/lib/libsndfile.dylib", "/usr/local/lib/libsndfile.1.dylib"):
+
+    # Strategy 3: Homebrew / system fallback (CI runner has these)
+    for p in (
+        "/opt/homebrew/lib/libsndfile.dylib",
+        "/opt/homebrew/lib/libsndfile.1.dylib",
+        "/usr/local/lib/libsndfile.dylib",
+        "/usr/local/lib/libsndfile.1.dylib",
+    ):
         _add(p)
 
-    # sounddevice → libportaudio
+    # ---- sounddevice → libportaudio ------------------------------------
+    # Strategy 1: find via sounddevice module
     try:
         import sounddevice  # noqa: WPS433
-        pa_data = os.path.join(
-            os.path.dirname(sounddevice.__file__), "_sounddevice_data", "portaudio-binaries"
-        )
-        for p in glob.glob(os.path.join(pa_data, "*.dylib")):
-            _add(p)
+        # sounddevice IS a package, so dirname(__file__) is site-packages/sounddevice/
+        sd_pkg  = os.path.dirname(sounddevice.__file__)   # site-packages/sounddevice/
+        sd_site = os.path.dirname(sd_pkg)                 # site-packages/
+        for search in (
+            os.path.join(sd_site, "_sounddevice_data", "portaudio-binaries"),
+            os.path.join(sd_site, "_sounddevice_data"),
+            os.path.join(sd_pkg,  "_sounddevice_data", "portaudio-binaries"),
+        ):
+            for p in glob.glob(os.path.join(search, "*.dylib")):
+                _add(p)
+    except Exception as e:
+        print(f"[setup] WARNING: could not locate sounddevice data dir: {e}")
+
+    # Strategy 2: walk all site-packages dirs
+    try:
+        for sp in _site.getsitepackages():
+            for sub in ("_sounddevice_data/portaudio-binaries", "_sounddevice_data"):
+                for p in glob.glob(os.path.join(sp, sub, "*.dylib")):
+                    _add(p)
     except Exception:
         pass
-    for p in ("/opt/homebrew/lib/libportaudio.dylib", "/opt/homebrew/lib/libportaudio.2.dylib",
-              "/usr/local/lib/libportaudio.dylib", "/usr/local/lib/libportaudio.2.dylib"):
+
+    # Strategy 3: Homebrew / system fallback
+    for p in (
+        "/opt/homebrew/lib/libportaudio.dylib",
+        "/opt/homebrew/lib/libportaudio.2.dylib",
+        "/usr/local/lib/libportaudio.dylib",
+        "/usr/local/lib/libportaudio.2.dylib",
+    ):
         _add(p)
+
+    if not any("sndfile" in p for p in paths):
+        print("[setup] ERROR: libsndfile was NOT found — the bundle will fail to load!")
+        print("[setup] Install with: brew install libsndfile")
+        # Don't raise here — allow the build to continue and catch it in build.sh
 
     return paths
 

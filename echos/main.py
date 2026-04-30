@@ -137,6 +137,15 @@ def _fix_native_audio_libs() -> None:
 # bootstrap cannot trigger a soundfile import before main() is called.
 _fix_native_audio_libs()
 
+# Force soundfile to be imported NOW with our ctypes patch and RTLD_GLOBAL
+# pre-load active.  Once cached in sys.modules, any later import by
+# transformers.audio_utils is a free no-op and cannot raise OSError.
+try:
+    import soundfile as _sf_warmup  # noqa: F401
+except Exception as _sf_exc:
+    # Log to stderr — the log file isn't open yet at this point.
+    print(f"[echos] WARNING: soundfile warmup import failed: {_sf_exc}", file=sys.stderr)
+
 
 def _setup_logging() -> None:
     log_dir = Path.home() / "Library" / "Logs" / "Echos"
