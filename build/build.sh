@@ -119,12 +119,23 @@ echo "Contents/Frameworks dylibs:"
 ls -lh "$FRAMEWORKS_DIR"/*.dylib 2>/dev/null || echo "  (none found)"
 
 # ---------------------------------------------------------------------------
-# (Optional) Code-sign the .app
-# Uncomment and fill in your Developer ID to sign before notarisation.
+# Step 3c — Re-apply ad-hoc signature after bundle modifications
+# Step 3b copies dylibs into Contents/Frameworks/ after py2app has already
+# signed the bundle, which invalidates the signature.  An invalid (broken)
+# signature causes macOS 15+ to show "app is damaged" with no "Open Anyway"
+# option.  Re-signing with an ad-hoc identity (-s -) fixes the bundle
+# structure without requiring a paid Developer ID certificate.
+# ---------------------------------------------------------------------------
+echo ""
+echo "=== [3c] Re-signing bundle with ad-hoc identity ==="
+codesign --deep --force --sign - "$APP_PATH"
+echo "Ad-hoc signature applied."
+
+# ---------------------------------------------------------------------------
+# (Optional) Replace the ad-hoc signature above with a Developer ID signature
+# for full notarisation and Gatekeeper approval without any user workaround.
 # ---------------------------------------------------------------------------
 # DEVELOPER_ID="Developer ID Application: Your Name (TEAMID)"
-# echo ""
-# echo "=== Signing ${APP_NAME}.app ==="
 # codesign --deep --force --verify --verbose \
 #   --sign "$DEVELOPER_ID" \
 #   --entitlements build/entitlements.plist \
