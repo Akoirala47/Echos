@@ -6,7 +6,7 @@
 <title>Echos Brain View</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { width: 100%; height: 100%; overflow: hidden; background: #1c1b17; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #f0ede4; }
 
 #canvas-container { width: 100%; height: 100%; }
 #canvas-container canvas { display: block; }
@@ -27,17 +27,17 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #1c1b17; }
 
 #back-btn {
   width: 32px; height: 32px;
-  background: rgba(40,38,32,0.85);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(251,250,246,0.90);
+  border: 1px solid #dcdacf;
   border-radius: 6px;
-  color: #a09e93;
+  color: #76746b;
   font-size: 16px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: background 120ms, color 120ms;
   backdrop-filter: blur(6px);
 }
-#back-btn:hover { background: rgba(55,52,45,0.95); color: #e8e6df; }
+#back-btn:hover { background: #fbfaf6; color: #1d1c19; }
 
 #vault-label {
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
@@ -55,49 +55,49 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #1c1b17; }
   position: absolute;
   left: 9px; top: 50%;
   transform: translateY(-50%);
-  color: #a09e93;
+  color: #76746b;
   font-size: 13px;
   pointer-events: none;
 }
 #search {
   width: 200px; height: 32px;
   padding: 0 10px 0 30px;
-  background: rgba(40,38,32,0.85);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(251,250,246,0.90);
+  border: 1px solid #dcdacf;
   border-radius: 6px;
-  color: #e8e6df;
+  color: #1d1c19;
   font-size: 12px;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
   outline: none;
   backdrop-filter: blur(6px);
   transition: border-color 120ms;
 }
-#search::placeholder { color: #4a4840; }
+#search::placeholder { color: #a09e93; }
 #search:focus { border-color: rgba(194,65,12,0.5); }
 
 /* ── Node count badge ────────────────────────────────────────────────────── */
 #stats {
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
   font-size: 11px;
-  color: #4a4840;
+  color: #a09e93;
 }
 
 /* ── Tooltip ─────────────────────────────────────────────────────────────── */
 #tooltip {
   position: fixed;
-  background: rgba(32,30,25,0.96);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(251,250,246,0.97);
+  border: 1px solid #dcdacf;
   border-radius: 7px;
   padding: 8px 12px;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
   font-size: 12px;
-  color: #e8e6df;
+  color: #1d1c19;
   max-width: 240px;
   pointer-events: none;
   opacity: 0;
   transition: opacity 120ms;
   z-index: 200;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
   line-height: 1.5;
 }
 #tooltip.visible { opacity: 1; }
@@ -128,13 +128,13 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #1c1b17; }
 'use strict';
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
-const BG          = 0x1c1b17;
+const BG          = 0xf0ede4;   // CANVAS_BG — warm parchment
 const ACCENT      = 0xc2410c;
 const BORDER      = 0xdcdacf;
-const NODE_DIM    = 0x2e2c27;   // dimmed node colour
-const EDGE_ALPHA  = 0.35;
+const NODE_DIM    = 0xd0cdc4;   // dimmed node colour on light bg
+const EDGE_ALPHA  = 0.55;
 const EDGE_STRONG = 0xc2410c;
-const EDGE_WEAK   = 0x3a3830;
+const EDGE_WEAK   = 0xdcdacf;   // BORDER — subtle on parchment
 
 const DOMAIN_PALETTE = [
   0xc2410c, 0x1c8b4a, 0x1d4ed8, 0xbe185d, 0xb45309, 0x7c3aed,
