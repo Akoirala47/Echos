@@ -1,4 +1,4 @@
-"""GraphCanvasWidget — QWebEngineView host for the D3.js knowledge graph."""
+"""GraphCanvasWidget — QWebEngineView host for the PIXI.js knowledge graph."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,8 @@ class _EchosGraphBridge(QObject):
 
     node_clicked = pyqtSignal(str)
     graph_ready = pyqtSignal()
+    back_requested = pyqtSignal()
+    search_changed = pyqtSignal(str)
 
     @pyqtSlot(str)
     def onNodeClicked(self, path: str) -> None:
@@ -32,41 +34,17 @@ class _EchosGraphBridge(QObject):
     def onReady(self) -> None:
         self.graph_ready.emit()
 
+    @pyqtSlot()
+    def onBackClicked(self) -> None:
+        self.back_requested.emit()
 
-class _GraphToolbar(QWidget):
-    """Floating toolbar: back button, vault label, search field."""
-
-    back_clicked = pyqtSignal()
-    search_changed = pyqtSignal(str)
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(8)
-
-        self._back_btn = QPushButton("←")
-        self._back_btn.setFixedWidth(32)
-        self._back_btn.clicked.connect(lambda _=False: self.back_clicked.emit())
-        layout.addWidget(self._back_btn)
-
-        self._vault_lbl = QLabel()
-        layout.addWidget(self._vault_lbl)
-
-        layout.addStretch()
-
-        self._search = QLineEdit()
-        self._search.setPlaceholderText("Search…")
-        self._search.setFixedWidth(200)
-        self._search.textChanged.connect(self.search_changed)
-        layout.addWidget(self._search)
-
-    def set_vault_name(self, name: str) -> None:
-        self._vault_lbl.setText(name)
+    @pyqtSlot(str)
+    def onSearchChanged(self, query: str) -> None:
+        self.search_changed.emit(query)
 
 
 class GraphCanvasWidget(QWidget):
-    """Container for the WebGL graph canvas (QWebEngineView + D3 graph.html)."""
+    """Container for the WebGL graph canvas (QWebEngineView + PIXI.js graph.html)."""
 
     back_requested = pyqtSignal()
     node_clicked = pyqtSignal(str)
@@ -78,13 +56,10 @@ class GraphCanvasWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self._toolbar = _GraphToolbar()
-        self._toolbar.back_clicked.connect(self.back_requested)
-        self._toolbar.search_changed.connect(self.search_changed)
-        layout.addWidget(self._toolbar)
-
         self._bridge = _EchosGraphBridge()
         self._bridge.node_clicked.connect(self.node_clicked)
+        self._bridge.back_requested.connect(self.back_requested)
+        self._bridge.search_changed.connect(self.search_changed)
 
         self._view: QWebEngineView | None = None
         self._channel: QWebChannel | None = None
@@ -112,4 +87,6 @@ class GraphCanvasWidget(QWidget):
             self._view.page().runJavaScript(js)
 
     def set_vault_name(self, name: str) -> None:
-        self._toolbar.set_vault_name(name)
+        if self._view is not None:
+            safe = json.dumps(name)
+            self._view.page().runJavaScript(f"if(window.setVaultName){{window.setVaultName({safe});}}")

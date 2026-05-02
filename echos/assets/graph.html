@@ -5,812 +5,502 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Echos Brain View</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #1c1b17; }
 
-  html, body {
-    width: 100%; height: 100%;
-    background: #f0ede4;
-    overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
-  }
+#canvas-container { width: 100%; height: 100%; }
+#canvas-container canvas { display: block; }
 
-  #graph-root {
-    width: 100%; height: 100%;
-    position: relative;
-  }
+/* ── Floating overlay toolbar ────────────────────────────────────────────── */
+#toolbar {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 100;
+  pointer-events: none;
+}
+#toolbar > * { pointer-events: auto; }
 
-  svg {
-    width: 100%; height: 100%;
-    display: block;
-  }
+#back-btn {
+  width: 32px; height: 32px;
+  background: rgba(40,38,32,0.85);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  color: #a09e93;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 120ms, color 120ms;
+  backdrop-filter: blur(6px);
+}
+#back-btn:hover { background: rgba(55,52,45,0.95); color: #e8e6df; }
 
-  /* ── Dot-grid overlay ──────────────────────────────────────────────────── */
-  .dot-grid { pointer-events: none; }
+#vault-label {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #76746b;
+  letter-spacing: 0.3px;
+  flex: 1;
+}
 
-  /* ── Hull polygons ────────────────────────────────────────────────── */
-  .hull {
-    fill-opacity: 0.08;
-    stroke-width: 1.5px;
-    stroke: rgba(220,218,207,0.3);
-    transition: fill-opacity 150ms ease;
-  }
-  .hull:hover { fill-opacity: 0.14; }
+#search-wrap {
+  position: relative;
+}
+#search-icon {
+  position: absolute;
+  left: 9px; top: 50%;
+  transform: translateY(-50%);
+  color: #a09e93;
+  font-size: 13px;
+  pointer-events: none;
+}
+#search {
+  width: 200px; height: 32px;
+  padding: 0 10px 0 30px;
+  background: rgba(40,38,32,0.85);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  color: #e8e6df;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  outline: none;
+  backdrop-filter: blur(6px);
+  transition: border-color 120ms;
+}
+#search::placeholder { color: #4a4840; }
+#search:focus { border-color: rgba(194,65,12,0.5); }
 
-  /* ── Edges ─────────────────────────────────────────────────────────────── */
-  .edge {
-    fill: none;
-    transition: stroke-opacity 200ms ease;
-  }
-  .edge-concept  { stroke-width: 1.5px; }
-  .edge-vector   { stroke-width: 1px; stroke-dasharray: 4,3; stroke: rgba(220,218,207,0.6); }
-  .edge-wikilink { stroke-width: 2px; stroke: #c2410c; }
-  /* Tether: dashed umbilical cord connecting each child back to its parent dir */
-  .edge-tether   { stroke-width: 2px; stroke: rgba(60, 55, 45, 0.6); }
+/* ── Node count badge ────────────────────────────────────────────────────── */
+#stats {
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 11px;
+  color: #4a4840;
+}
 
-  /* ── Nodes ─────────────────────────────────────────────────────────────── */
-  .node-group { cursor: pointer; }
-  .node-circle {
-    r: 7;
-    stroke: rgba(0,0,0,0.15);
-    stroke-width: 1px;
-    transition: r 150ms ease;
-  }
-  .node-circle.hovered { r: 9; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4)); }
-  .node-circle.cluster {
-    r: 12;
-    opacity: 0.7;
-    fill: rgba(180,168,148,0.25);
-    stroke: rgba(0,0,0,0.12);
-  }
-
-  /* ── Labels ────────────────────────────────────────────────────────────── */
-  .node-label {
-    font-size: 11px;
-    fill: #5c5a52;
-    text-anchor: middle;
-    dominant-baseline: hanging;
-    pointer-events: none;
-    user-select: none;
-  }
-  .dir-label {
-    font-size: 10px;
-    fill: #76746b;
-    text-anchor: middle;
-    dominant-baseline: auto;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-    pointer-events: none;
-    user-select: none;
-    opacity: 0.9;
-  }
-
-  /* ── Tooltip card ──────────────────────────────────────────────────────── */
-  #tooltip {
-    position: absolute;
-    background: #ffffff;
-    border: 1px solid #e5e3d9;
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-size: 12px;
-    color: #1d1c19;
-    max-width: 220px;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 150ms ease;
-    z-index: 10;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-    line-height: 1.5;
-  }
-  #tooltip.visible { opacity: 1; }
-  #tooltip .tip-title { font-weight: 600; font-size: 12.5px; margin-bottom: 3px; }
-  #tooltip .tip-meta  { color: #76746b; font-size: 11px; }
-
-  /* ── Search filter highlight ───────────────────────────────────────────── */
-  .node-group.dimmed { opacity: 0.2; transition: opacity 200ms ease; }
-  .node-group.matched { opacity: 1; transition: opacity 200ms ease; }
-
-  /* ── Fractal spawn animation ───────────────────────────────────────────── */
-  .spawning { animation: fadeIn 300ms ease forwards; }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  .collapsing { animation: fadeOut 200ms ease forwards; }
-  @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+/* ── Tooltip ─────────────────────────────────────────────────────────────── */
+#tooltip {
+  position: fixed;
+  background: rgba(32,30,25,0.96);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 7px;
+  padding: 8px 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
+  font-size: 12px;
+  color: #e8e6df;
+  max-width: 240px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms;
+  z-index: 200;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  line-height: 1.5;
+}
+#tooltip.visible { opacity: 1; }
+.tip-title { font-weight: 600; font-size: 12.5px; margin-bottom: 3px; }
+.tip-fp { color: #76746b; font-size: 10.5px; word-break: break-word; }
 </style>
 </head>
 <body>
-<div id="graph-root">
-  <svg id="graph-svg">
-    <defs>
-      <!-- Arrowhead marker for wikilink edges -->
-      <marker id="arrow-wikilink" markerWidth="6" markerHeight="4"
-              refX="5" refY="2" orient="auto" markerUnits="strokeWidth">
-        <polygon points="0 0, 6 2, 0 4" fill="#c2410c"/>
-      </marker>
-      <!-- Dot-grid pattern: dark dots on light parchment bg -->
-      <pattern id="dot-pattern" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-        <circle cx="10" cy="10" r="0.9" fill="rgba(0,0,0,0.07)"/>
-      </pattern>
-    </defs>
-    <!-- Dot-grid background fills the full SVG (pre-transform) -->
-    <rect width="100%" height="100%" fill="url(#dot-pattern)" class="dot-grid"/>
-    <!-- Zoomable group -->
-    <g id="zoom-layer">
-      <g id="hulls-layer"></g>
-      <g id="tethers-layer"></g>
-      <g id="edges-layer"></g>
-      <g id="nodes-layer"></g>
-    </g>
-  </svg>
-  <div id="tooltip"></div>
+
+<div id="canvas-container"></div>
+
+<div id="toolbar">
+  <button id="back-btn" title="Back">←</button>
+  <span id="vault-label"></span>
+  <span id="stats"></span>
+  <div id="search-wrap">
+    <span id="search-icon">⌕</span>
+    <input id="search" type="text" placeholder="Search notes…" autocomplete="off" spellcheck="false">
+  </div>
 </div>
 
-<!-- D3 v7 (vendored) -->
+<div id="tooltip"></div>
+
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script src="vendor/d3.min.js"></script>
+<script src="vendor/pixi.min.js"></script>
 <script>
 'use strict';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-const CANVAS_BG     = '#f0ede4';
-const PANEL_BG      = '#ffffff';
-const BORDER_SOFT   = '#e5e3d9';
-const TEXT          = '#1d1c19';
-const TEXT_MUTED    = '#76746b';
-const TEXT_FAINT    = '#a09e93';
-const BORDER        = '#dcdacf';
-const ACCENT        = '#c2410c';
-const DOMAIN_PAL    = ['#c2410c','#1c8b4a','#1d4ed8','#be185d','#b45309','#7c3aed'];
-const NODE_DEFAULT  = '#b0ae9e';
+// ── Theme ─────────────────────────────────────────────────────────────────────
+const BG          = 0x1c1b17;
+const ACCENT      = 0xc2410c;
+const BORDER      = 0xdcdacf;
+const NODE_DIM    = 0x2e2c27;   // dimmed node colour
+const EDGE_ALPHA  = 0.35;
+const EDGE_STRONG = 0xc2410c;
+const EDGE_WEAK   = 0x3a3830;
+
+const DOMAIN_PALETTE = [
+  0xc2410c, 0x1c8b4a, 0x1d4ed8, 0xbe185d, 0xb45309, 0x7c3aed,
+];
+
+function hexToPixi(css) {
+  return parseInt(css.replace('#',''), 16);
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let _allNodes = [];  // all nodes (flat)
-let _allEdges = [];  // all edges
-let _sim      = null;
-let _svg      = null;
-let _zoom     = null;
-let _zoomLayer = null;
-let _searchQuery = '';
+let _nodes = [];
+let _edges = [];
+let _sim   = null;
+let _app   = null;
 
-// Directory collapse state: dirId → { collapsed: bool }
-let _dirState = {};
-// NodeId → simulation node data
-let _nodeById = {};
-// Tether edges: dashed umbilicals from each child file → its parent dir.
-// Added when a dir is expanded, removed when it collapses.
-let _tetherEdges = [];
+// PIXI containers
+let _edgeGfx  = null;   // single Graphics object for all edges
+let _nodeLayer = null;  // Container for node sprites
+let _nodeObjs = {};     // nodeId → { gfx, label }
 
-// ── QWebChannel bridge setup ──────────────────────────────────────────────────
+let _transform = { x: 0, y: 0, scale: 1 };
+let _dragging  = null;
+let _panStart  = null;
+let _searchQ   = '';
+
+// ── QWebChannel bridge ────────────────────────────────────────────────────────
 let _bridge = null;
 
 function _initBridge() {
   if (typeof QWebChannel === 'undefined') {
-    // Running standalone (no Qt host) — expose stubs
-    window.echosGraph = {
-      loadGraph: loadGraph,
-      expandDirectory: expandDirectory,
-      collapseDirectory: collapseDirectory,
-      filterNodes: filterNodes,
-      recenter: () => _centerView(),
-    };
+    window.echosGraph = { loadGraph, filterNodes, recenter: _recenter };
     window.echosBridge = {
-      onNodeClicked: (p) => console.log('[echos] node clicked:', p),
-      onReady: () => console.log('[echos] ready'),
+      onNodeClicked: p => console.log('[echos] click', p),
+      onReady:       () => console.log('[echos] ready'),
+      onBackClicked: () => console.log('[echos] back'),
+      onSearchChanged: q => console.log('[echos] search', q),
     };
     window.echosBridge.onReady();
     return;
   }
-  new QWebChannel(qt.webChannelTransport, function(channel) {
-    _bridge = channel.objects.echosGraphBridge;
-    window.echosGraph = {
-      loadGraph: loadGraph,
-      expandDirectory: expandDirectory,
-      collapseDirectory: collapseDirectory,
-      filterNodes: filterNodes,
-      recenter: () => _centerView(),
-    };
+  new QWebChannel(qt.webChannelTransport, ch => {
+    _bridge = ch.objects.echosGraphBridge;
+    window.echosGraph = { loadGraph, filterNodes, recenter: _recenter };
     window.echosBridge = {
-      onNodeClicked: (path) => { if (_bridge) _bridge.onNodeClicked(path); },
-      onReady: () => { if (_bridge) _bridge.onReady(); },
+      onNodeClicked:   p => _bridge.onNodeClicked(p),
+      onReady:         () => _bridge.onReady(),
+      onBackClicked:   () => _bridge.onBackClicked(),
+      onSearchChanged: q => _bridge.onSearchChanged(q),
     };
     window.echosBridge.onReady();
   });
 }
 
-// ── Main graph init ───────────────────────────────────────────────────────────
+// ── PIXI bootstrap ────────────────────────────────────────────────────────────
+function _initPixi() {
+  const W = window.innerWidth, H = window.innerHeight;
 
-function _viewportSize() {
-  // Prefer the SVG's actual painted dimensions: window.innerWidth/Height can
-  // be 0 inside QWebEngineView at DOMContentLoaded time.
-  const node = _svg && _svg.node ? _svg.node() : null;
-  const rect = node ? node.getBoundingClientRect() : null;
-  const W = (rect && rect.width)  || window.innerWidth  || 900;
-  const H = (rect && rect.height) || window.innerHeight || 650;
-  return { W: Math.max(W, 200), H: Math.max(H, 200) };
+  _app = new PIXI.Application({
+    width: W, height: H,
+    backgroundColor: BG,
+    antialias: true,
+    resolution: window.devicePixelRatio || 1,
+    autoDensity: true,
+  });
+  document.getElementById('canvas-container').appendChild(_app.view);
+
+  // World container (holds edges + nodes, gets transformed for pan/zoom)
+  const world = new PIXI.Container();
+  _app.stage.addChild(world);
+  _app.stage._world = world;
+
+  _edgeGfx = new PIXI.Graphics();
+  world.addChild(_edgeGfx);
+
+  _nodeLayer = new PIXI.Container();
+  world.addChild(_nodeLayer);
+
+  // Centre view
+  _transform = { x: W / 2, y: H / 2, scale: 1 };
+  _applyTransform();
+
+  // Wheel → zoom
+  _app.view.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.08 : 0.93;
+    const rect = _app.view.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    _transform.x = mx + (_transform.x - mx) * factor;
+    _transform.y = my + (_transform.y - my) * factor;
+    _transform.scale *= factor;
+    _transform.scale = Math.min(Math.max(_transform.scale, 0.1), 5);
+    _applyTransform();
+  }, { passive: false });
+
+  // Pan
+  _app.view.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    const hit = _hitTest(e.clientX, e.clientY);
+    if (hit) {
+      _dragging = { node: hit, ox: e.clientX, oy: e.clientY };
+      if (_sim) { hit.fx = hit.x; hit.fy = hit.y; _sim.alphaTarget(0.3).restart(); }
+    } else {
+      _panStart = { mx: e.clientX, my: e.clientY, tx: _transform.x, ty: _transform.y };
+    }
+  });
+  window.addEventListener('mousemove', e => {
+    if (_dragging) {
+      const { node } = _dragging;
+      const wx = (e.clientX - _transform.x) / _transform.scale;
+      const wy = (e.clientY - _transform.y) / _transform.scale;
+      node.fx = wx; node.fy = wy;
+      if (_sim) _sim.alphaTarget(0.3).restart();
+    } else if (_panStart) {
+      _transform.x = _panStart.tx + (e.clientX - _panStart.mx);
+      _transform.y = _panStart.ty + (e.clientY - _panStart.my);
+      _applyTransform();
+    } else {
+      _hoverTest(e.clientX, e.clientY);
+    }
+  });
+  window.addEventListener('mouseup', e => {
+    if (_dragging) {
+      _dragging.node.fx = null; _dragging.node.fy = null;
+      if (_sim) _sim.alphaTarget(0);
+      _dragging = null;
+    }
+    _panStart = null;
+  });
+
+  // Click
+  _app.view.addEventListener('click', e => {
+    const hit = _hitTest(e.clientX, e.clientY);
+    if (hit && hit.path) window.echosBridge?.onNodeClicked(hit.path);
+  });
+
+  // Double-click → recenter
+  _app.view.addEventListener('dblclick', () => _recenter(true));
+
+  window.addEventListener('resize', _onResize);
+
+  // Tick loop
+  _app.ticker.add(_drawFrame);
 }
 
-function _centerView(scale = 0.85, animate = false) {
-  const { W, H } = _viewportSize();
-  const tx = d3.zoomIdentity.translate(W / 2, H / 2).scale(scale);
-  if (animate) {
-    _svg.transition().duration(400).call(_zoom.transform, tx);
+function _applyTransform() {
+  const world = _app.stage._world;
+  world.position.set(_transform.x, _transform.y);
+  world.scale.set(_transform.scale);
+}
+
+function _onResize() {
+  _app.renderer.resize(window.innerWidth, window.innerHeight);
+}
+
+function _recenter(animate = false) {
+  const W = window.innerWidth, H = window.innerHeight;
+  _transform = { x: W / 2, y: H / 2, scale: 0.85 };
+  _applyTransform();
+}
+
+// ── Hit testing ───────────────────────────────────────────────────────────────
+const NODE_R = 6;
+
+function _screenToWorld(sx, sy) {
+  return {
+    x: (sx - _transform.x) / _transform.scale,
+    y: (sy - _transform.y) / _transform.scale,
+  };
+}
+
+function _hitTest(sx, sy) {
+  const { x, y } = _screenToWorld(sx, sy);
+  for (const n of _nodes) {
+    const dx = (n.x || 0) - x, dy = (n.y || 0) - y;
+    if (dx*dx + dy*dy < (NODE_R * 2.5) ** 2) return n;
+  }
+  return null;
+}
+
+let _hoveredId = null;
+function _hoverTest(sx, sy) {
+  const hit = _hitTest(sx, sy);
+  const tip = document.getElementById('tooltip');
+  if (hit) {
+    if (_hoveredId !== hit.id) {
+      _hoveredId = hit.id;
+      tip.innerHTML = `<div class="tip-title">${hit.label || hit.id}</div>`
+        + (hit.fingerprint ? `<div class="tip-fp">${hit.fingerprint}</div>` : '');
+    }
+    tip.classList.add('visible');
+    tip.style.left = (sx + 14) + 'px';
+    tip.style.top  = (sy - tip.offsetHeight / 2) + 'px';
+    _app.view.style.cursor = 'pointer';
   } else {
-    _svg.call(_zoom.transform, tx);
+    _hoveredId = null;
+    tip.classList.remove('visible');
+    _app.view.style.cursor = 'default';
   }
 }
 
-function initGraph() {
-  _svg = d3.select('#graph-svg');
-  _zoomLayer = d3.select('#zoom-layer');
-
-  _zoom = d3.zoom()
-    .scaleExtent([0.15, 4])
-    .on('zoom', (event) => {
-      _zoomLayer.attr('transform', event.transform);
-    });
-  _svg.call(_zoom);
-
-  // Centre the view on D3 origin (0,0). The SVG may report 0×0 at
-  // DOMContentLoaded inside QWebEngineView; re-centre once layout settles.
-  _centerView();
-  requestAnimationFrame(() => _centerView());
-  setTimeout(() => _centerView(), 120);
-
-  // Disable D3's default dbl-click zoom and bind our own reset behaviour.
-  _svg.on('dblclick.zoom', null);
-  _svg.on('dblclick', () => _centerView(0.85, true));
-
-  // Re-centre if the host window resizes.
-  window.addEventListener('resize', () => _centerView());
-}
-
-// ── loadGraph ─────────────────────────────────────────────────────────────────
-
+// ── Graph load ────────────────────────────────────────────────────────────────
 function loadGraph(data) {
   if (typeof data === 'string') data = JSON.parse(data);
 
-  _allNodes = (data.nodes || []).map(n => ({
-    ...n,
-    color: n.color || NODE_DEFAULT,
-    _collapsed: false,
-    _isDir: n.kind === 'dir',
-  }));
-  _allEdges = data.edges || [];
+  // Only file nodes — discard dirs
+  _nodes = (data.nodes || [])
+    .filter(n => n.kind !== 'dir')
+    .map(n => ({
+      ...n,
+      x: (Math.random() - 0.5) * 400,
+      y: (Math.random() - 0.5) * 400,
+    }));
 
-  // Build dirState for directory nodes
-  _dirState = {};
-  _allNodes.filter(n => n._isDir).forEach(n => {
-    _dirState[n.id] = { collapsed: true };  // directories start collapsed
+  _edges = (data.edges || []).filter(e => {
+    const nodeIds = new Set(_nodes.map(n => n.id));
+    return nodeIds.has(e.source) && nodeIds.has(e.target);
   });
 
-  _render();
+  document.getElementById('stats').textContent =
+    `${_nodes.length} note${_nodes.length !== 1 ? 's' : ''}`;
+
+  _buildPixiNodes();
+  _startSim();
+  _recenter();
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
+// ── PIXI node objects ─────────────────────────────────────────────────────────
+function _buildPixiNodes() {
+  // Clear old
+  _nodeLayer.removeChildren();
+  _nodeObjs = {};
 
-function _render() {
-  const { visNodes, visEdges, visTethers } = _buildVisible();
-  // Tethers now use their own dedicated SVG layer — don't mix into edges
-  const allEdges = visEdges;
+  for (const n of _nodes) {
+    const color = n.color ? hexToPixi(n.color) : DOMAIN_PALETTE[0];
 
-  _nodeById = {};
-  visNodes.forEach(n => { _nodeById[n.id] = n; });
+    const gfx = new PIXI.Graphics();
+    gfx.beginFill(color, 1);
+    gfx.drawCircle(0, 0, NODE_R);
+    gfx.endFill();
 
-  // Assign initial positions BEFORE drawing so node groups enter the DOM with
-  // a correct transform — otherwise they all sit at SVG (0,0) until the first
-  // tick fires, which can leave them visibly stacked on slow paints.
-  _seedPositions(visNodes);
+    const label = new PIXI.Text(
+      (n.label || n.id).slice(0, 24),
+      {
+        fontFamily: '-apple-system, BlinkMacSystemFont, Inter, sans-serif',
+        fontSize: 10,
+        fill: 0xa09e93,
+        resolution: 2,
+      }
+    );
+    label.anchor.set(0.5, 0);
+    label.y = NODE_R + 3;
 
-  _drawHulls(visNodes);
-  _drawEdges(allEdges);
-  _drawTetherLines();
-  _drawNodes(visNodes);
+    const container = new PIXI.Container();
+    container.addChild(gfx);
+    container.addChild(label);
+    _nodeLayer.addChild(container);
 
-  _startSim(visNodes, [...allEdges, ...visTethers]);
-
-  _centerView();
-  requestAnimationFrame(() => _centerView());
-}
-
-function _seedPositions(visNodes) {
-  const N = Math.max(visNodes.length, 1);
-  const spread = Math.max(260, 110 * Math.sqrt(N));
-
-  visNodes.forEach((n, i) => {
-    if (Number.isFinite(n.x) && Number.isFinite(n.y)) return;
-    const angle = i * GOLDEN + (Math.random() - 0.5) * 0.4;
-    const r = (N === 1) ? 0 : spread * Math.sqrt((i + 0.5) / N);
-    n.x = Math.cos(angle) * r;
-    n.y = Math.sin(angle) * r;
-    n.vx = 0;
-    n.vy = 0;
-  });
-}
-
-function _buildVisible() {
-  // Find which file nodes are hidden because parent dir is collapsed
-  const hiddenIds = new Set();
-
-  _allNodes.filter(n => n._isDir).forEach(dir => {
-    if (_dirState[dir.id] && _dirState[dir.id].collapsed) {
-      _allNodes.forEach(n => {
-        if (!n._isDir && n.dir_id === dir.id) hiddenIds.add(n.id);
-      });
-    }
-  });
-
-  const visNodes = _allNodes.filter(n => !hiddenIds.has(n.id));
-  const visIds   = new Set(visNodes.map(n => n.id));
-
-  const _hasVis = e => visIds.has(e.source.id || e.source) && visIds.has(e.target.id || e.target);
-
-  const visEdges   = _allEdges.filter(_hasVis);
-  const visTethers = _tetherEdges.filter(_hasVis);
-
-  return { visNodes, visEdges, visTethers };
-}
-
-// ── Hulls ──────────────────────────────────────────────────────────────────────
-
-function _drawHulls(visNodes) {
-  const layer = d3.select('#hulls-layer');
-
-  // Group file nodes by dir_id — only show hull when ≥3 children are visible.
-  const byDir = d3.group(visNodes.filter(n => !n._isDir && n.dir_id), n => n.dir_id);
-
-  const hullData = [];
-  byDir.forEach((children, dirId) => {
-    if (children.length >= 3) hullData.push({ dirId, children });
-  });
-
-  // Join
-  const hullSel = layer.selectAll('.hull-group')
-    .data(hullData, d => d.dirId);
-
-  hullSel.exit().remove();
-
-  const hullEnter = hullSel.enter()
-    .append('g').attr('class', 'hull-group');
-  hullEnter.append('path').attr('class', 'hull');
-  hullEnter.append('text').attr('class', 'dir-label');
-
-  // Store reference for tick updates
-  layer._hullData = hullData;
-}
-
-function _updateHulls(visNodes) {
-  const layer = d3.select('#hulls-layer');
-  const hullData = layer._hullData || [];
-
-  const nodePos = {};
-  visNodes.forEach(n => { nodePos[n.id] = { x: n.x || 0, y: n.y || 0 }; });
-
-  d3.selectAll('.hull-group').each(function(d) {
-    const pts = d.children.map(c => [nodePos[c.id]?.x ?? 0, nodePos[c.id]?.y ?? 0]);
-    const hull = d3.polygonHull(pts);
-
-    // Find primary domain colour
-    const domainCounts = {};
-    d.children.forEach(c => {
-      if (c.color) domainCounts[c.color] = (domainCounts[c.color] || 0) + 1;
-    });
-    let primaryColor = '#dcdacf';
-    let maxCount = 0;
-    Object.entries(domainCounts).forEach(([col, cnt]) => {
-      if (cnt > maxCount) { maxCount = cnt; primaryColor = col; }
-    });
-
-    // Hide hull when it's too spread out — a huge polygon just fills the viewport.
-    const tooLarge = hull && Math.abs(d3.polygonArea(hull)) > 200000;
-    d3.select(this).select('.hull')
-      .attr('d', hull && !tooLarge ? 'M' + hull.map(p => p.join(',')).join('L') + 'Z' : '')
-      .style('fill', primaryColor);
-
-    if (hull && !tooLarge) {
-      const cx = d3.mean(pts, p => p[0]);
-      const cy = d3.min(pts, p => p[1]) - 14;
-      // find dir name
-      const dirNode = _allNodes.find(n => n.id === d.dirId);
-      const label   = dirNode ? (dirNode.label || d.dirId.split('/').pop()) : d.dirId;
-      d3.select(this).select('.dir-label')
-        .attr('x', cx)
-        .attr('y', cy)
-        .text(label.toUpperCase());
-    } else {
-      d3.select(this).select('.dir-label').text('');
-    }
-  });
-}
-
-// ── Edges ─────────────────────────────────────────────────────────────────────
-
-function _edgeClass(e) {
-  switch (e.edge_type) {
-    case 'wikilink': return 'edge edge-wikilink';
-    case 'vector':   return 'edge edge-vector';
-    case 'tether':   return 'edge edge-tether';
-    default:         return 'edge edge-concept';
+    _nodeObjs[n.id] = { container, gfx, label };
   }
 }
 
-function _edgeStroke(e) {
-  if (e.edge_type === 'wikilink') return ACCENT;
-  if (e.edge_type === 'vector')   return BORDER;
-  if (e.edge_type === 'tether')   return 'rgba(60, 55, 45, 0.6)';
-  const srcNode = _nodeById[e.source.id || e.source];
-  const col = srcNode ? srcNode.color : BORDER;
-  return _hexToRgba(col, 0.6);
-}
-
-function _hexToRgba(hex, alpha) {
-  const r = parseInt(hex.slice(1,3),16);
-  const g = parseInt(hex.slice(3,5),16);
-  const b = parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
-function _drawEdges(visEdges) {
-  const layer = d3.select('#edges-layer');
-
-  const sel = layer.selectAll('.edge')
-    .data(visEdges, e => `${e.source.id||e.source}-${e.target.id||e.target}-${e.edge_type}`);
-
-  sel.exit().remove();
-
-  const enter = sel.enter()
-    .append('path')
-    .attr('class', e => _edgeClass(e))
-    .attr('stroke-opacity', e => e.edge_type === 'tether' ? 0.7 : 0.2 + (e.strength || 0.5) * 0.6)
-    .attr('marker-end', e => e.edge_type === 'wikilink' ? 'url(#arrow-wikilink)' : null);
-
-  layer._edgeSel = enter.merge(sel);
-  layer._edgeSel
-    .attr('stroke', e => _edgeStroke(e))
-    .attr('stroke-opacity', e => e.edge_type === 'tether' ? 0.7 : 0.2 + (e.strength || 0.5) * 0.6);
-}
-
-function _updateEdgePaths() {
-  const layer = d3.select('#edges-layer');
-  if (!layer._edgeSel) return;
-
-  layer._edgeSel.attr('d', e => {
-    const s = _nodeById[e.source.id || e.source];
-    const t = _nodeById[e.target.id || e.target];
-    if (!s || !t) return '';
-    const sx = s.x || 0, sy = s.y || 0, tx = t.x || 0, ty = t.y || 0;
-    const dx = tx - sx, dy = ty - sy;
-    const cx1 = sx + dx * 0.25 - dy * 0.15;
-    const cy1 = sy + dy * 0.25 + dx * 0.15;
-    const cx2 = tx - dx * 0.25 - dy * 0.15;
-    const cy2 = ty - dy * 0.25 + dx * 0.15;
-    return `M${sx},${sy} C${cx1},${cy1} ${cx2},${cy2} ${tx},${ty}`;
-  });
-}
-
-// ── Nodes ─────────────────────────────────────────────────────────────────────
-
-function _drawNodes(visNodes) {
-  const layer = d3.select('#nodes-layer');
-  const tip   = document.getElementById('tooltip');
-
-  const sel = layer.selectAll('.node-group')
-    .data(visNodes, d => d.id);
-
-  sel.exit()
-    .classed('collapsing', true)
-    .on('animationend', function() { d3.select(this).remove(); });
-
-  const enter = sel.enter()
-    .append('g')
-    .attr('class', d => `node-group${d.spawning ? ' spawning' : ''}`)
-    .attr('data-id', d => d.id)
-    .attr('transform', d => {
-      const x = Number.isFinite(d.x) ? d.x : 0;
-      const y = Number.isFinite(d.y) ? d.y : 0;
-      return `translate(${x},${y})`;
-    })
-    .call(
-      d3.drag()
-        .on('start', _dragStart)
-        .on('drag',  _dragged)
-        .on('end',   _dragEnd)
-    )
-    .on('click', (event, d) => {
-      event.stopPropagation();
-      if (d._isDir) {
-        // Toggle directory expansion
-        if (_dirState[d.id] && _dirState[d.id].collapsed) {
-          expandDirectory(d.id);
-        } else {
-          collapseDirectory(d.id);
-        }
-      } else {
-        window.echosBridge?.onNodeClicked(d.path || d.id);
-      }
-    })
-    .on('mouseover', (event, d) => {
-      const circ = event.currentTarget.querySelector('circle');
-      if (circ) {
-        circ.classList.add('hovered');
-        if (!d._isDir) {
-          circ.style.filter = 'drop-shadow(0 2px 6px rgba(0,0,0,0.4))';
-        }
-      }
-      // Show tooltip: filename + fingerprint concepts
-      const fp = d.fingerprint || '';
-      tip.innerHTML = `<div class="tip-title">${d.label || d.id}</div>`
-        + (fp ? `<div class="tip-meta">${fp}</div>` : '');
-      tip.classList.add('visible');
-      _positionTip(event);
-    })
-    .on('mousemove', (event) => { _positionTip(event); })
-    .on('mouseleave', (event, d) => {
-      const circ = event.currentTarget.querySelector('circle');
-      if (circ) {
-        circ.classList.remove('hovered');
-        if (!d._isDir) {
-          circ.style.filter = 'drop-shadow(0 1px 4px rgba(0,0,0,0.18))';
-        }
-      }
-      tip.classList.remove('visible');
-    });
-
-  enter.append('circle')
-    .attr('class', d => d._isDir ? 'node-circle cluster' : 'node-circle')
-    .attr('r', d => d._isDir ? 12 : 7)
-    .attr('fill', d => d._isDir
-      ? 'rgba(140,130,110,0.20)'
-      : (d.color || NODE_DEFAULT))
-    .style('filter', d => d._isDir
-      ? null
-      : 'drop-shadow(0 1px 4px rgba(0,0,0,0.18))');
-
-  enter.append('text')
-    .attr('class', 'node-label')
-    .attr('dy', d => (d._isDir ? 18 : 13))
-    .text(d => _truncate(d.label || d.id, 20));
-
-  layer._nodeSel = enter.merge(sel);
-  layer._nodeSel.classed('dimmed', false).classed('matched', false);
-
-  // Apply search filter
-  if (_searchQuery) filterNodes(_searchQuery);
-}
-
-function _truncate(s, maxLen) {
-  return s.length > maxLen ? s.slice(0, maxLen - 1) + '…' : s;
-}
-
-function _positionTip(event) {
-  const tip = document.getElementById('tooltip');
-  const pad = 12;
-  const tw = tip.offsetWidth, th = tip.offsetHeight;
-  let x = event.clientX + pad, y = event.clientY - th / 2;
-  if (x + tw > window.innerWidth - pad)  x = event.clientX - tw - pad;
-  if (y < pad) y = pad;
-  if (y + th > window.innerHeight - pad) y = window.innerHeight - th - pad;
-  tip.style.left = x + 'px';
-  tip.style.top  = y + 'px';
-}
-
-function _updateNodePositions() {
-  const layer = d3.select('#nodes-layer');
-  if (!layer._nodeSel) return;
-  layer._nodeSel.attr('transform', d => {
-    const x = Number.isFinite(d.x) ? d.x : 0;
-    const y = Number.isFinite(d.y) ? d.y : 0;
-    return `translate(${x},${y})`;
-  });
-}
-
-// ── Simulation ────────────────────────────────────────────────────────────────
-
-function _startSim(visNodes, visEdges, alpha = 1.0, { preTick = true } = {}) {
+// ── D3-force simulation ───────────────────────────────────────────────────────
+function _startSim() {
   if (_sim) _sim.stop();
 
-  const N = Math.max(visNodes.length, 1);
+  const nodeMap = {};
+  _nodes.forEach(n => { nodeMap[n.id] = n; });
 
-  const links = visEdges.map(e => ({
-    ...e,
-    source: e.source.id || e.source,
-    target: e.target.id || e.target,
+  const links = _edges.map(e => ({
+    source: e.source,
+    target: e.target,
+    strength: e.strength || 0.5,
   }));
 
-  // Moderate charge: enough to spread nodes but not blast them off-screen.
-  // distanceMin(20) is CRITICAL — without it, nodes at the same position
-  // cause division-by-zero → NaN → all positions become NaN → nothing renders.
-  const chargeStrength = -400;
+  const N = Math.max(_nodes.length, 1);
 
-  _sim = d3.forceSimulation(visNodes)
+  _sim = d3.forceSimulation(_nodes)
     .force('link', d3.forceLink(links).id(d => d.id)
-        .distance(l => l.edge_type === 'tether' ? 80 : 120)
-        .strength(l => l.edge_type === 'tether' ? 0.6 : 0.3))
-    .force('charge',  d3.forceManyBody()
-        .strength(chargeStrength)
-        .distanceMin(20)
-        .distanceMax(1200))
-    .force('collide', d3.forceCollide(d => d._isDir ? 40 : 22).strength(0.7).iterations(3))
-    .force('x',       d3.forceX(0).strength(0.012))
-    .force('y',       d3.forceY(0).strength(0.012))
-    .velocityDecay(0.4)
-    .alpha(alpha)
-    .alphaMin(0.001)
-    .on('tick', _tick);
+      .distance(120).strength(l => l.strength * 0.3))
+    .force('charge', d3.forceManyBody()
+      .strength(-350).distanceMin(20).distanceMax(900))
+    .force('collide', d3.forceCollide(NODE_R + 14).strength(0.7).iterations(2))
+    .force('x', d3.forceX(0).strength(0.02))
+    .force('y', d3.forceY(0).strength(0.02))
+    .velocityDecay(0.45)
+    .alpha(1)
+    .alphaMin(0.001);
 
-  if (preTick) {
-    // Pre-tick for initial layout so nodes appear spread on first paint.
-    _sim.stop();  // stop animated ticks during pre-calculation
-    const n = Math.min(80, 25 + N * 2);
-    for (let i = 0; i < n; i++) _sim.tick();
-    _tick();  // render the final state
-    _sim.restart();  // resume animated ticks for any residual settling
+  // Pre-tick for initial spread
+  _sim.stop();
+  const preTicks = Math.min(60, 20 + N * 2);
+  for (let i = 0; i < preTicks; i++) _sim.tick();
+  _sim.restart();
+}
+
+// ── PIXI render loop ──────────────────────────────────────────────────────────
+function _drawFrame() {
+  // Update node positions
+  for (const n of _nodes) {
+    const obj = _nodeObjs[n.id];
+    if (!obj) continue;
+    const x = n.x || 0, y = n.y || 0;
+    obj.container.position.set(x, y);
+
+    // Dim if search active and not matched
+    const dimmed = _searchQ && !_isMatch(n);
+    obj.gfx.alpha = dimmed ? 0.15 : 1;
+    obj.label.alpha = dimmed ? 0.1 : (_hoveredId === n.id ? 1 : 0.7);
+  }
+
+  // Redraw edges
+  _edgeGfx.clear();
+  const nodePos = {};
+  _nodes.forEach(n => { nodePos[n.id] = { x: n.x || 0, y: n.y || 0 }; });
+
+  for (const e of _edges) {
+    const src = nodePos[e.source?.id || e.source];
+    const tgt = nodePos[e.target?.id || e.target];
+    if (!src || !tgt) continue;
+
+    const isWiki   = e.edge_type === 'wikilink';
+    const isConcept = e.edge_type === 'concept';
+    const strength = e.strength || 0.5;
+
+    const color = isWiki ? EDGE_STRONG : EDGE_WEAK;
+    const alpha = isWiki  ? 0.7
+                : isConcept ? 0.15 + strength * 0.35
+                : 0.1 + strength * 0.2;
+    const width = isWiki ? 1.5 : 0.8;
+
+    _edgeGfx.lineStyle(width, color, alpha);
+    _edgeGfx.moveTo(src.x, src.y);
+    _edgeGfx.lineTo(tgt.x, tgt.y);
   }
 }
 
-function _tick() {
-  const { visNodes } = _buildVisible();
-  _updateNodePositions();
-  _updateEdgePaths();
-  _updateTetherLines();
-  _updateHulls(visNodes);
+// ── Search ────────────────────────────────────────────────────────────────────
+function _isMatch(n) {
+  const q = _searchQ.toLowerCase();
+  return (n.label || '').toLowerCase().includes(q)
+      || (n.fingerprint || '').toLowerCase().includes(q);
 }
-
-// ── Tether lines (dedicated layer, bypasses D3 edge pipeline) ─────────────────
-
-function _drawTetherLines() {
-  const layer = d3.select('#tethers-layer');
-  layer.selectAll('line').remove();
-
-  _tetherEdges.forEach(te => {
-    const s = _nodeById[te.source] || _nodeById[te.source?.id];
-    const t = _nodeById[te.target] || _nodeById[te.target?.id];
-    if (!s || !t) return;
-    layer.append('line')
-      .attr('class', 'tether-line')
-      .attr('data-source', te.source?.id || te.source)
-      .attr('data-target', te.target?.id || te.target)
-      .attr('x1', s.x || 0).attr('y1', s.y || 0)
-      .attr('x2', t.x || 0).attr('y2', t.y || 0)
-      .attr('stroke', 'rgba(60, 55, 45, 0.5)')
-      .attr('stroke-width', 1.5)
-      .attr('stroke-dasharray', '4,4');
-  });
-  console.log('[tethers] drew', layer.selectAll('line').size(), 'lines');
-}
-
-function _updateTetherLines() {
-  d3.select('#tethers-layer').selectAll('line').each(function() {
-    const el = d3.select(this);
-    const srcId = el.attr('data-source');
-    const tgtId = el.attr('data-target');
-    const s = _nodeById[srcId];
-    const t = _nodeById[tgtId];
-    if (s && t) {
-      el.attr('x1', s.x).attr('y1', s.y)
-        .attr('x2', t.x).attr('y2', t.y);
-    }
-  });
-}
-
-// ── Drag ──────────────────────────────────────────────────────────────────────
-
-function _dragStart(event, d) {
-  if (!event.active) _sim?.alphaTarget(0.3).restart();
-  d.fx = d.x; d.fy = d.y;
-}
-function _dragged(event, d) { d.fx = event.x; d.fy = event.y; }
-function _dragEnd(event, d) {
-  if (!event.active) _sim?.alphaTarget(0);
-  d.fx = null; d.fy = null;
-}
-
-// ── Fractal expansion / collapse ──────────────────────────────────────────────
-
-const GOLDEN = Math.PI * (3 - Math.sqrt(5));  // ≈ 2.3999 rad — golden angle
-
-// Escape a string for use inside a CSS [attr="value"] selector.
-function _attrSel(id) {
-  return '[data-id="' + id.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
-}
-
-function expandDirectory(dirId) {
-  const state = _dirState[dirId];
-  if (!state || !state.collapsed) return;
-  state.collapsed = false;
-
-  const dirNode = _allNodes.find(n => n.id === dirId);
-  const cx = (dirNode && Number.isFinite(dirNode.x)) ? dirNode.x : 0;
-  const cy = (dirNode && Number.isFinite(dirNode.y)) ? dirNode.y : 0;
-
-  console.log('[expand]', dirId, 'parent at', cx, cy);
-
-  const children = _allNodes.filter(n => !n._isDir && n.dir_id === dirId);
-  const M = children.length;
-  console.log('[expand] children count:', M);
-  if (M === 0) return;
-
-  // Spawn children in a circle around parent
-  const spawnRadius = Math.max(50, M * 8);
-  children.forEach((child, i) => {
-    const angle = (i / M) * Math.PI * 2 + (Math.random() - 0.5) * 0.3;
-    child.x  = cx + Math.cos(angle) * spawnRadius;
-    child.y  = cy + Math.sin(angle) * spawnRadius;
-    child.vx = 0;
-    child.vy = 0;
-    child.fx = null;
-    child.fy = null;
-    child.spawning = true;
-  });
-
-  // Create tether edges (used by forceLink AND the dedicated tether line layer)
-  _tetherEdges = _tetherEdges.filter(e => e._dirId !== dirId);
-  children.forEach(child => {
-    _tetherEdges.push({
-      source: child.id, target: dirId,
-      edge_type: 'tether', strength: 1.0, _dirId: dirId
-    });
-  });
-
-  // Rebuild visible set
-  const { visNodes, visEdges, visTethers } = _buildVisible();
-  _nodeById = {};
-  visNodes.forEach(n => { _nodeById[n.id] = n; });
-
-  // Draw everything — tethers use their own layer (simple SVG lines)
-  _drawHulls(visNodes);
-  _drawEdges(visEdges);      // concept/vector/wikilink edges only
-  _drawTetherLines();         // direct SVG lines for tethers
-  _drawNodes(visNodes);
-
-  // Unpin parent so it reacts to the push from children
-  if (dirNode) { dirNode.fx = null; dirNode.fy = null; }
-
-  // Full alpha restart — enough energy to push neighboring directories apart.
-  // preTick=false so user sees the organic expansion animation.
-  _startSim(visNodes, [...visEdges, ...visTethers], 1.0, { preTick: false });
-}
-
-function collapseDirectory(dirId) {
-  const state = _dirState[dirId];
-  if (!state || state.collapsed) return;
-  state.collapsed = true;
-
-  // Remove tether edges for this dir's children.
-  _tetherEdges = _tetherEdges.filter(e => e._dirId !== dirId);
-
-  // Clear tether lines from the dedicated layer
-  _drawTetherLines();
-
-  // Release any parent pin left over from expansion.
-  const dirNode = _allNodes.find(n => n.id === dirId);
-  if (dirNode) { dirNode.fx = null; dirNode.fy = null; }
-
-  // Re-render: children are now hidden, sim restarts so remaining nodes
-  // relax into a tighter layout (the space freed by collapsing is reused).
-  _render();
-}
-
-// ── Search filter ─────────────────────────────────────────────────────────────
 
 function filterNodes(query) {
-  _searchQuery = (query || '').toLowerCase().trim();
-  const layer  = d3.select('#nodes-layer');
-  if (!layer._nodeSel) return;
-
-  if (!_searchQuery) {
-    layer._nodeSel.classed('dimmed', false).classed('matched', false);
-    return;
-  }
-
-  layer._nodeSel.each(function(d) {
-    const label = (d.label || d.id || '').toLowerCase();
-    const match = label.includes(_searchQuery);
-    d3.select(this).classed('dimmed', !match).classed('matched', match);
-  });
+  _searchQ = (query || '').trim();
 }
 
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
+// ── Toolbar wiring ────────────────────────────────────────────────────────────
+document.getElementById('back-btn').addEventListener('click', () => {
+  window.echosBridge?.onBackClicked();
+});
 
+document.getElementById('search').addEventListener('input', e => {
+  filterNodes(e.target.value);
+  window.echosBridge?.onSearchChanged(e.target.value);
+});
+
+// ── Vault name ────────────────────────────────────────────────────────────────
+window.setVaultName = name => {
+  document.getElementById('vault-label').textContent = name;
+};
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  initGraph();
+  _initPixi();
   _initBridge();
 });
 </script>
