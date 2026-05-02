@@ -848,6 +848,7 @@ class SidebarWidget(QWidget):
     note_selected         = pyqtSignal(str)   # emits str(Path) of .md file
     file_deleted          = pyqtSignal(str)    # absolute path deleted from disk
     file_renamed          = pyqtSignal(str, str)  # (old_abs_path, new_abs_path)
+    update_requested      = pyqtSignal()       # user clicked the update badge
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -993,6 +994,17 @@ class SidebarWidget(QWidget):
         )
         settings_btn.clicked.connect(self.settings_clicked)
 
+        self._update_badge = QPushButton()
+        self._update_badge.setFlat(True)
+        self._update_badge.setVisible(False)
+        self._update_badge.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_badge.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; text-align: right;"
+            f" font-size: 11px; font-weight: 600; color: #c2410c; padding: 6px 10px; }}"
+            f"QPushButton:hover {{ color: #a83508; }}"
+        )
+        self._update_badge.clicked.connect(self.update_requested)
+
         footer = QWidget()
         footer.setFixedHeight(36)
         footer.setStyleSheet(
@@ -1001,6 +1013,8 @@ class SidebarWidget(QWidget):
         fl = QHBoxLayout(footer)
         fl.setContentsMargins(0, 0, 0, 0)
         fl.addWidget(settings_btn)
+        fl.addStretch(1)
+        fl.addWidget(self._update_badge)
 
         # ── Outer layout ──────────────────────────────────────────────────────
         outer = QVBoxLayout(self)
@@ -1015,6 +1029,13 @@ class SidebarWidget(QWidget):
         self._update_vault_state()
 
     # ── Public API ─────────────────────────────────────────────────────────────
+
+    def show_update_badge(self, version: str) -> None:
+        self._update_badge.setText(f"↑ {version}")
+        self._update_badge.setVisible(True)
+
+    def hide_update_badge(self) -> None:
+        self._update_badge.setVisible(False)
 
     def set_vault_path(self, vault_path: str) -> None:
         if not vault_path:

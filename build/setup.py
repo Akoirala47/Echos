@@ -198,6 +198,7 @@ OPTIONS = {
         "cffi",
         "cffi._cffi_include",
         # Echos modules
+        "echos.version",
         "echos.main",
         "echos.app",
         "echos.config.config_manager",
@@ -206,6 +207,7 @@ OPTIONS = {
         "echos.core.model_manager",
         "echos.core.notes_worker",
         "echos.core.obsidian_manager",
+        "echos.core.updater",
         "echos.ui.main_window",
         "echos.ui.onboarding",
         "echos.ui.notes_panel",

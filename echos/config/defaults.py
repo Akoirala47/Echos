@@ -17,4 +17,5 @@ DEFAULT_CONFIG: dict = {
     "custom_prompt_suffix": "",
     "note_language": "English",
     "courses": [],
+    "pending_update": None,  # {"version": "vX.Y.Z", "url": "..."}
 }

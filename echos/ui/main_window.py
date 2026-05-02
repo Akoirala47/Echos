@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 from echos.ui.notes_panel import NotesPanel
 from echos.ui.record_bar import RecordBarWidget
 from echos.ui.sidebar import SidebarWidget
+from echos.ui.update_banner import UpdateBanner
 from echos.ui.split_tab_area import SplitTabArea
 from echos.ui.status_bar import StatusBarWidget
 from echos.ui.tab_manager import TabManager
@@ -43,6 +44,7 @@ class MainWindow(QMainWindow):
         self.transcript_panel = TranscriptPanel()
         self.notes_panel = NotesPanel()
         self.status_bar_widget = StatusBarWidget()
+        self.update_banner = UpdateBanner()
 
         # ── Panels splitter (transcript | notes) ──────────────────────────────
         panels_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -91,6 +93,7 @@ class MainWindow(QMainWindow):
         c_layout.setContentsMargins(0, 0, 0, 0)
         c_layout.setSpacing(0)
         c_layout.addWidget(top_splitter, 1)
+        c_layout.addWidget(self.update_banner)
         c_layout.addWidget(status_border)
         c_layout.addWidget(self.status_bar_widget)
         self.setCentralWidget(central)

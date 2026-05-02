@@ -14,6 +14,7 @@ from echos.core.audio_worker import AudioWorker
 from echos.core.model_manager import ModelDownloadWorker, ModelManager
 from echos.core.notes_worker import NotesWorker
 from echos.core.obsidian_manager import ObsidianManager
+from echos.core.updater import UpdateChecker, UpdateInstaller
 from echos.ui.main_window import MainWindow
 from echos.ui.onboarding import OnboardingWizard
 from echos.ui.settings_window import SettingsWindow
@@ -60,6 +61,10 @@ class AppController:
         self._notes_worker: NotesWorker | None = None
         self._auto_gen_worker: NotesWorker | None = None
         self._model_load_worker: ModelDownloadWorker | None = None
+        self._update_checker: UpdateChecker | None = None
+        self._update_installer: UpdateInstaller | None = None
+        self._pending_update_version: str = ""
+        self._pending_update_url: str = ""
 
         # Fingerprint stored after notes generation; used at save time
         self._notes_fingerprint: str = ""
@@ -118,6 +123,11 @@ class AppController:
         w.open_log_action.triggered.connect(self._on_open_log)
         w.command_palette_action.triggered.connect(self._on_command_palette)
 
+        # Update banner
+        w.update_banner.update_accepted.connect(self._on_update_accepted)
+        w.update_banner.update_dismissed.connect(self._on_update_dismissed)
+        w.sidebar.update_requested.connect(self._on_update_requested)
+
         # Keyboard shortcuts per SPEC addendum §A:
         #   ⌘R  → Start (IDLE) or Resume (PAUSED) only
         #   ⌘P  → Pause (RECORDING) only
@@ -144,6 +154,21 @@ class AppController:
 
         # Disable generate button until recording stops.
         self._window.notes_panel.set_generate_enabled(False)
+
+        # Restore persisted update badge (user previously dismissed the banner).
+        pending = self._config.get("pending_update")
+        if pending and isinstance(pending, dict):
+            version = pending.get("version", "")
+            url = pending.get("url", "")
+            if version and url:
+                self._pending_update_version = version
+                self._pending_update_url = url
+                self._window.sidebar.show_update_badge(version)
+
+        # Check for updates 8 seconds after launch so it never competes with
+        # the model load / UI paint during startup.
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(8000, self._start_update_check)
 
         # If model not loaded, show status.
         if not self._model_manager.is_loaded():
@@ -206,6 +231,63 @@ class AppController:
             "Check the log file (Help → Open Log File) for full details.\n"
             "You can also try re-downloading the model in Settings → Transcription.",
         )
+
+    # ------------------------------------------------------------------
+    # Auto-update
+    # ------------------------------------------------------------------
+
+    def _start_update_check(self) -> None:
+        self._update_checker = UpdateChecker()
+        self._update_checker.update_available.connect(self._on_update_available)
+        self._update_checker.start()
+
+    def _on_update_available(self, version: str, url: str) -> None:
+        self._pending_update_version = version
+        self._pending_update_url = url
+        self._window.update_banner.show_update(version)
+        self._window.sidebar.show_update_badge(version)
+
+    def _on_update_dismissed(self) -> None:
+        self._window.update_banner.setVisible(False)
+        # Persist so the sidebar badge survives app restarts.
+        cfg = self._config_mgr.load()
+        cfg["pending_update"] = {
+            "version": self._pending_update_version,
+            "url": self._pending_update_url,
+        }
+        self._config_mgr.save(cfg)
+        self._config = cfg
+
+    def _on_update_requested(self) -> None:
+        """Sidebar badge clicked — re-show the banner."""
+        if self._pending_update_version:
+            self._window.update_banner.show_update(self._pending_update_version)
+
+    def _on_update_accepted(self) -> None:
+        if not self._pending_update_url:
+            return
+        self._window.update_banner.show_progress(self._pending_update_version)
+        self._update_installer = UpdateInstaller(self._pending_update_url)
+        self._update_installer.progress.connect(self._on_install_progress)
+        self._update_installer.install_done.connect(self._on_install_done)
+        self._update_installer.install_failed.connect(self._on_install_failed)
+        self._update_installer.start()
+
+    def _on_install_progress(self, done: int, total: int) -> None:
+        self._window.update_banner.set_progress(done, total)
+
+    def _on_install_done(self) -> None:
+        self._window.update_banner.show_done()
+        self._window.sidebar.hide_update_badge()
+        # Clear the persisted pending update now that it's installed.
+        cfg = self._config_mgr.load()
+        cfg["pending_update"] = None
+        self._config_mgr.save(cfg)
+        self._config = cfg
+
+    def _on_install_failed(self, message: str) -> None:
+        logger.error("Update install failed: %s", message)
+        self._window.update_banner.show_error(message)
 
     # ------------------------------------------------------------------
     # Course management
