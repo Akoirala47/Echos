@@ -11,10 +11,15 @@ from PyQt6.QtWidgets import QMessageBox
 
 from echos.config.config_manager import ConfigManager
 from echos.core.audio_worker import AudioWorker
+from echos.core.connection_resolver import ConnectionResolver
+from echos.core.embedding_engine import EmbeddingEngine
+from echos.core.fingerprint import FingerprintEngine
+from echos.core.index_worker import IndexWorker
 from echos.core.model_manager import ModelDownloadWorker, ModelManager
 from echos.core.notes_worker import NotesWorker
 from echos.core.obsidian_manager import ObsidianManager
 from echos.core.updater import UpdateChecker, UpdateInstaller
+from echos.core.vault_index import VaultIndex
 from echos.ui.main_window import MainWindow
 from echos.ui.onboarding import OnboardingWizard
 from echos.ui.settings_window import SettingsWindow
@@ -76,6 +81,11 @@ class AppController:
         # macOS power assertion token (None on non-macOS)
         self._power_assertion = None
 
+        # Vault indexing pipeline
+        self._vault_index: VaultIndex | None = None
+        self._embed_engine: EmbeddingEngine | None = None
+        self._index_worker: IndexWorker | None = None
+
         self._connect_signals()
         self._apply_initial_ui_state()
 
@@ -128,6 +138,14 @@ class AppController:
         w.update_banner.update_dismissed.connect(self._on_update_dismissed)
         w.sidebar.update_requested.connect(self._on_update_requested)
 
+        # Brain View / graph canvas
+        w.brain_view_action.triggered.connect(self._on_brain_view)
+        w.graph_canvas.back_requested.connect(self._window.show_recording_view)
+        w.graph_canvas.node_clicked.connect(self._on_graph_node_clicked)
+
+        # Vault watcher → re-index debounce
+        w.sidebar._watcher.reindex_ready.connect(self._on_reindex_ready)
+
         # Keyboard shortcuts per SPEC addendum §A:
         #   ⌘R  → Start (IDLE) or Resume (PAUSED) only
         #   ⌘P  → Pause (RECORDING) only
@@ -169,6 +187,9 @@ class AppController:
         # the model load / UI paint during startup.
         from PyQt6.QtCore import QTimer
         QTimer.singleShot(8000, self._start_update_check)
+
+        # Boot the vault indexing pipeline for any previously configured vault.
+        self._init_indexing_pipeline()
 
         # If model not loaded, show status.
         if not self._model_manager.is_loaded():
@@ -800,9 +821,114 @@ class AppController:
             self._window.sidebar.set_vault_path(vault)
         new_device = self._config.get("inference_device", "auto")
         self._model_manager.set_device(new_device)
+        self._init_indexing_pipeline()
 
         if dlg._redownload_requested:
             self._start_model_download()
+
+    # ------------------------------------------------------------------
+    # Vault indexing pipeline
+    # ------------------------------------------------------------------
+
+    def _init_indexing_pipeline(self) -> None:
+        vault_path = self._config.get("vault_path", "")
+        if not vault_path or not Path(vault_path).is_dir():
+            return
+
+        self._vault_index = VaultIndex(vault_path)
+        self._embed_engine = EmbeddingEngine(vault_index=self._vault_index)
+
+        # Give the sidebar watcher a reference so it can mark dirty files.
+        self._window.sidebar._watcher.set_vault_index(self._vault_index)
+
+        # Update graph canvas header.
+        self._window.graph_canvas.set_vault_name(Path(vault_path).name)
+
+        # Queue any unindexed or stale notes for first-run indexing.
+        self._queue_initial_dirty_notes(vault_path)
+        if self._vault_index.get_dirty_notes():
+            self._trigger_index_worker()
+
+    def _queue_initial_dirty_notes(self, vault_path: str) -> None:
+        root = Path(vault_path)
+        existing = {n["path"]: n for n in self._vault_index.get_all_nodes()}  # type: ignore[union-attr]
+        for md in root.rglob("*.md"):
+            if any(part.startswith(".") for part in md.parts):
+                continue
+            path_str = str(md)
+            try:
+                mtime = md.stat().st_mtime
+            except OSError:
+                continue
+            note_id = str(md.relative_to(root))
+            if path_str not in existing:
+                self._vault_index.upsert_note(note_id, path_str, mtime, dirty=1)  # type: ignore[union-attr]
+            elif existing[path_str].get("dirty", 0) == 0:
+                if mtime > existing[path_str].get("modified_at", 0.0):
+                    self._vault_index.set_dirty(path_str)  # type: ignore[union-attr]
+
+    def _on_reindex_ready(self) -> None:
+        self._trigger_index_worker()
+
+    def _trigger_index_worker(self) -> None:
+        if self._vault_index is None or self._embed_engine is None:
+            return
+        if self._index_worker is not None and self._index_worker.isRunning():
+            return
+
+        fp_engine = FingerprintEngine(embedding_engine=self._embed_engine)
+        api_key = self._config.get("google_api_key", "")
+        model_id = self._config.get("gemma_model", "gemma-4-31b-it")
+
+        self._index_worker = IndexWorker(
+            self._vault_index,
+            self._embed_engine,
+            fp_engine,
+            api_key=api_key,
+            model_id=model_id,
+        )
+        self._index_worker.indexing_finished.connect(self._on_indexing_finished)
+        self._index_worker.start()
+
+    def _on_indexing_finished(self) -> None:
+        self._refresh_graph()
+
+    def _refresh_graph(self) -> None:
+        if self._vault_index is None:
+            return
+        nodes, edges = ConnectionResolver.resolve(self._vault_index)
+        node_dicts = [
+            {
+                "id": n.id,
+                "label": n.label,
+                "kind": n.kind,
+                "color": n.color,
+                "domain": n.domain,
+                "dir_id": n.dir_id,
+                "fingerprint": n.fingerprint,
+                "path": n.path,
+            }
+            for n in nodes
+        ]
+        edge_dicts = [
+            {
+                "source": e.source,
+                "target": e.target,
+                "edge_type": e.edge_type,
+                "strength": e.strength,
+            }
+            for e in edges
+        ]
+        self._window.graph_canvas.set_graph_data(node_dicts, edge_dicts)
+
+    def _on_brain_view(self) -> None:
+        self._refresh_graph()
+        self._window.show_brain_view()
+
+    def _on_graph_node_clicked(self, path: str) -> None:
+        vault_root = self._config.get("vault_path", "")
+        self._window.tab_manager.open_file(path, vault_root=vault_root)
+        self._window.show_recording_view()
 
     # ------------------------------------------------------------------
     # Model download (triggered from settings re-download or incomplete cache)

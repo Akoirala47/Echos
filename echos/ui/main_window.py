@@ -6,10 +6,12 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
     QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from echos.ui.graph_canvas import GraphCanvasWidget
 from echos.ui.notes_panel import NotesPanel
 from echos.ui.record_bar import RecordBarWidget
 from echos.ui.sidebar import SidebarWidget
@@ -69,10 +71,18 @@ class MainWindow(QMainWindow):
         # ── Split tab area: Echoes (primary) + split panes ───────────────────
         self.split_tab_area = SplitTabArea(recording_area)
 
-        # ── Top splitter (sidebar | split area) ──────────────────────────────
+        # ── Graph canvas (Brain View) ─────────────────────────────────────────
+        self.graph_canvas = GraphCanvasWidget()
+
+        # ── Content stack (recording view ↔ brain view) ───────────────────────
+        self._content_stack = QStackedWidget()
+        self._content_stack.addWidget(self.split_tab_area)  # page 0
+        self._content_stack.addWidget(self.graph_canvas)    # page 1
+
+        # ── Top splitter (sidebar | content stack) ────────────────────────────
         top_splitter = QSplitter(Qt.Orientation.Horizontal)
         top_splitter.addWidget(self.sidebar)
-        top_splitter.addWidget(self.split_tab_area)
+        top_splitter.addWidget(self._content_stack)
         top_splitter.setSizes([248, 972])
         top_splitter.setCollapsible(0, False)
         top_splitter.setCollapsible(1, False)
@@ -147,6 +157,10 @@ class MainWindow(QMainWindow):
         self.toggle_notes_action = QAction("Toggle Notes Panel", self)
         view_menu.addAction(self.toggle_notes_action)
         view_menu.addSeparator()
+        self.brain_view_action = QAction("Brain View", self)
+        self.brain_view_action.setShortcut(QKeySequence("Ctrl+G"))
+        view_menu.addAction(self.brain_view_action)
+        view_menu.addSeparator()
         self.command_palette_action = QAction("Command Palette", self)
         self.command_palette_action.setShortcut(QKeySequence("Ctrl+Shift+P"))
         view_menu.addAction(self.command_palette_action)
@@ -167,6 +181,12 @@ class MainWindow(QMainWindow):
         close_pane.activated.connect(
             lambda: self.split_tab_area.close_pane(self.split_tab_area.active_manager)
         )
+
+    def show_brain_view(self) -> None:
+        self._content_stack.setCurrentIndex(1)
+
+    def show_recording_view(self) -> None:
+        self._content_stack.setCurrentIndex(0)
 
     def update_course_header(self, course: dict, session_num: int) -> None:
         """Keep window title minimal — topic shown in the record bar header."""
