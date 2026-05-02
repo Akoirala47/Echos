@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import plistlib
 import shutil
 import subprocess
 import tempfile
@@ -111,16 +112,16 @@ class UpdateInstaller(QThread):
 
     def _mount(self, dmg_path: Path) -> str:
         result = subprocess.run(
-            ["hdiutil", "attach", "-nobrowse", "-quiet", str(dmg_path)],
-            capture_output=True, text=True,
+            ["hdiutil", "attach", "-nobrowse", "-plist", str(dmg_path)],
+            capture_output=True,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"hdiutil attach failed: {result.stderr.strip()}")
-        # Last non-empty tab-separated line: /dev/diskNsN \t Apple_HFS \t /Volumes/X
-        for line in reversed(result.stdout.strip().splitlines()):
-            parts = line.split("\t")
-            if len(parts) >= 3 and parts[-1].strip():
-                return parts[-1].strip()
+            raise RuntimeError(f"hdiutil attach failed: {result.stderr.decode().strip()}")
+        plist = plistlib.loads(result.stdout)
+        for entity in plist.get("system-entities", []):
+            mount_point = entity.get("mount-point")
+            if mount_point:
+                return mount_point
         raise RuntimeError("Could not parse hdiutil mount point.")
 
     def _install(self, mount_point: str) -> None:
