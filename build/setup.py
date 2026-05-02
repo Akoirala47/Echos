@@ -171,6 +171,11 @@ OPTIONS = {
         "markdown",
         "soundfile",
         "echos",
+        # sklearn (scikit-learn) is a transitive dep pulled in by transformers'
+        # generation module.  It imports scipy unconditionally at the module level,
+        # so scipy must be bundled whenever sklearn is present.
+        "sklearn",
+        "scipy",
         # google.generativeai is a PEP 420 namespace package; imp.find_module()
         # cannot locate it so it must NOT be listed here.  modulegraph traces it
         # automatically via the import in notes_worker.py.
@@ -219,7 +224,6 @@ OPTIONS = {
     "excludes": [
         "tkinter",
         "matplotlib",
-        "scipy",
         "IPython",
         "jupyter",
         "notebook",
