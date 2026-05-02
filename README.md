@@ -1,154 +1,142 @@
 # Echos
 
-**Local AI Transcription & Automated Note-Taking for macOS**
+**Local AI transcription, lecture notes, and vault knowledge graph for macOS**
 
-**Echos** is a native, privacy-first macOS application that records spoken audio, transcribes it entirely on-device using **Whisper large-v3**, and leverages **Gemma 4 31B** (via Google AI Studio) to automatically generate clean, structured Markdown notes directly into your **Obsidian** vault.
+**Echos** is a native macOS app that captures microphone audio, transcribes it **on-device** with **Whisper large-v3** (PyTorch / MPS), and uses **Google’s Gemini models** (default **Gemma 4 31B** via [Google AI Studio](https://aistudio.google.com)) to turn transcripts into structured Markdown. Notes are saved into an **Obsidian** vault—with optional **YAML front matter**, including a compact **concept fingerprint** for later graph linking.
 
-Designed specifically to run on Apple Silicon, Echos transforms lectures, meetings, interviews, and brainstorms into polished knowledge bases, all while ensuring your raw audio never leaves your Mac. 
+Privacy boundary: **raw audio stays on your Mac.** Only text is sent to Google when you generate or draft notes.
 
 ---
 
-## Features & Benefits
+## Features & benefits
 
-- **100% Local Audio Transcription**: Powered by **Whisper large-v3** running locally on Apple's Metal Performance Shaders (MPS). Your privacy boundary is the text transcript—no raw audio is ever uploaded to the cloud.
-- **Automated Obsidian Integration**: Directly writes formatted `.md` notes into your Vault, complete with custom YAML front matter (tags, course/topic names, dates). Includes a live filesystem watcher (`QFileSystemWatcher`) that instantly synchronizes the app's sidebar with your Obsidian folders.
-- **Intelligent Note Generation**: Turns chaotic raw transcripts into cleanly structured study notes using Gemma 4 31B (or any compatible Google AI model). Built-in filtering strips out LLM reasoning/thinking tags (`<thinking>`) to guarantee pristine final outputs.
-- **Elegant Native Interface**: Features a comprehensive V2 UI overhaul. Enjoy a "warm parchment" aesthetic with seamless macOS window integration, an interactive Markdown previewer, and a beautifully animated real-time sine-wave audio visualizer.
-- **Advanced Session Management**: Seamlessly pause and resume recordings without breaking context. Overlapping speech chunks are intelligently deduplicated on the fly, ensuring a flawless continuous transcript.
+- **Local transcription** — **Whisper large-v3** on Apple Silicon (Metal / MPS) when available; falls back to CPU on Intel machines.
+- **Obsidian-aware workflow** — Course-based folders, YAML front matter, “Open in Obsidian,” vault URI support. Sidebar tree stays in sync with disk via **`QFileSystemWatcher`** (hidden folders such as `.obsidian` are ignored).
+- **Incremental note drafting** — While recording, once enough **new transcript** has accumulated (~3 500 characters per chunk), Echos can **stream drafted notes** in the Notes panel so you are not stuck with a blank page until the session ends (requires a configured API key).
+- **Manual generate & regenerate** — After **End Session**, use **Generate Notes** and **Regenerate…** with custom instructions; thinking/reasoning tags from the model are stripped before display.
+- **Brain View (knowledge graph)** — **`View → Brain View` (⌘G)** switches to an embedded **PyQt WebEngine** page that renders the vault graph with **PIXI.js**. Edges combine **wikilinks**, **shared fingerprint concepts**, and **high cosine similarity** between locally stored embeddings. **`View → Command Palette` (⇧⌘P)** jumps to vault files or common actions.
+- **Vault index (`SQLite`)** — Under your vault root, **`.echoes/vault.index.db`** stores indexed notes (`vector_blob`, `fingerprint_text`, `dirty`), **edges**, and **tags**. The watcher marks changed `.md` files dirty immediately; indexing runs **after a 30 s quiet debounce** of saves so bursts of edits collapse into one batch.
+- **Fingerprints & embeddings** — **FingerprintEngine** calls the configured **Google AI** (`google-genai`) model for structured concepts/domains (`concepts:[…] | domain:[…] | hash:…`, kept short for YAML). When the vault grows past ~30 fingerprinted notes, **`top_k_similar`** narrows vocabulary candidates (~20 neighbours) via **`all-MiniLM-L6-v2`** embeddings. **`sentence-transformers`** persists **384‑dim** vectors in SQLite for cosine-based graph edges (see **`ConnectionResolver`**).
+- **Sessions** — Pause / resume recording, overlapping chunk dedupe in the transcription path, Dock recording indicator optional, option to prevent sleep during capture.
+- **Editor tabs** — The main area uses a **split-friendly tab workspace**: the Echoes recording view plus Markdown editor tabs (with **`QWebChannel`** where used for previews). Choosing a graph node opens that note’s path in an editor tab and returns you to the recording layout.
+- **In-app updates** — On launch, Echos may check **`Akoirala47/Echos`** GitHub releases and offer to download the latest `.dmg`.
 
 ---
 
 ## Requirements
 
-
-| Requirement  | Details                                                                                                                                                |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **macOS**    | 13 Ventura or later required.                                                                                                                          |
-| **Hardware** | **Apple Silicon (M1/M2/M3/M4)** strongly recommended for real-time MPS inference. Intel Macs will fall back to CPU inference (functional, but slower). |
-| **Note App** | [Obsidian](https://obsidian.md) installed. Echos populates an existing vault; it does not create a new one.                                            |
-| **API Key**  | **Google AI API key** (Free tier works perfectly). Get one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).                        |
-| **Storage**  | 4 GB free disk space (~620 MB for the app + ~3 GB for the Whisper model, downloaded on first launch).                                                  |
-
+| Requirement  | Details |
+| ------------- | ------- |
+| **macOS**    | **13 Ventura** or later. |
+| **Hardware** | **Apple Silicon** strongly recommended for responsive Whisper inference. Intel Macs use CPU (slower but supported). Extra RAM helps when Whisper, embeddings, and the WebEngine graph are all active. |
+| **Obsidian** | [Obsidian](https://obsidian.md) recommended; Echos writes into folders you designate inside a vault structure. |
+| **API key**  | **Google AI API key** ([aistudio.google.com/apikey](https://aistudio.google.com/apikey)) for note generation & fingerprint passes during indexing. |
+| **Storage**    | Roughly **4 GB** free for the app plus Whisper (~3 GB downloaded on first use). The embedding model pulls in separately the first time `sentence-transformers` runs. |
+| **Graph view** | **PyQt6-WebEngine** (listed in `requirements.txt`). If WebEngine fails to load, Brain View falls back to a short message instead of the canvas. |
 
 ---
 
 ## Installation
 
-1. Download `Echos-2.0.x.dmg` from the [Releases page](https://github.com/Akoirala47/Echos/releases).
-2. Open the `.dmg` and drag **Echos.app** into your `/Applications` folder.
+1. Download the latest **`Echos-*.dmg`** from the [Releases](https://github.com/Akoirala47/Echos/releases) page (version in source: `echos/version.py`).
+2. Open the DMG and drag **Echos.app** into **Applications**.
 3. Launch from Launchpad or Spotlight.
 
-> **Note on Gatekeeper:** Echos is currently unsigned with an Apple Developer certificate. On first launch, macOS may block it. Right-click **Echos.app → Open → Open** to bypass this protection once. You will not be prompted again.
+> **Gatekeeper:** Builds may lack full Apple notarisation. On first launch, use **Right‑click → Open** if macOS warns about an unidentified developer.
 
 ---
 
-## Getting Started
+## Getting started
 
-A simple, three-step onboarding wizard will run automatically the first time you open Echos.
+A short onboarding wizard appears on **first launch** if no config exists.
 
-1. **Welcome**: A brief overview of permissions.
-2. **Configure**: Select your **Obsidian Vault** root folder (the top-level directory, not a subfolder) and securely paste your Google AI API key. Echos validates the key immediately.
-3. **Model Download**: Echos automatically fetches the Whisper large-v3 model (~~3 GB) from HuggingFace to `~~/.cache/huggingface/hub/`. You can dismiss the wizard to background the download. *If interrupted, the download will cleanly resume on next launch.*
+1. **Welcome** — Overview of microphone and file access.
+2. **Configure** — Pick your vault root and paste your **Google AI** key (validated in the wizard).
+3. **Model download** — Whisper **large‑v3** is fetched into **`~/.cache/huggingface/hub/`** (Hugging Face cache). You can dismiss the wizard; partial downloads resume on next launch.
+
+Config is stored atomically under **`~/Library/Application Support/Echos/config.json`** (write-temp-then-rename). Logs rotate under **`~/Library/Logs/Echos/echos.log`**.
 
 ---
 
-## Interface & Usage
+## Interface & usage
 
-### The Sidebar (Live Vault Tree)
+### Sidebar — courses & vault tree
 
-- **Live Sync**: Displays a live tree of your Obsidian vault. Create, delete, or rename files in Finder/Obsidian, and Echos updates instantly. 
-- **Topics**: Set up custom "Topics" mapped to vault subfolders. Selecting a topic auto-detects existing note sequences (e.g., if you have `Lecture-04.md`, it pre-fills `5` for your next session).
+- **Courses**: Named topics mapped to vault subfolders, colors, reorder, next **lecture number** auto-detection.
+- **Live tree**: Mirrors `.md` files and folders under the vault (excluding dot-folders).
 
-### The Record Bar
+### Echoes workspace (recording + panels)
 
-Features a responsive, time-based animated waveform that reflects real microphone RMS volume. Hit **Start Recording (⌘R)** to begin capturing audio. The app actively prevents your Mac from sleeping during a session. 
+- **Record bar**: Waveform RMS visualization (optional); **⌘R** start/stop style shortcuts wired from the menus.
+- **Transcript**: Live Whisper chunks (default **~6 s** chunks — tune in Settings); editable text.
+- **Notes**: Markdown preview / raw toggle; streamed output during drafting or explicit generation.
 
-### The Transcription Engine
+### Brain View & command palette
 
-Every 6 seconds (configurable), Echos processes your audio chunk through Whisper. You will see the text stream into the **Transcript Panel** on the left.
-
-- **Overlap Deduplication**: Prevents clipping and dropped words by overlapping audio chunks and programmatically stripping duplicates. 
-- **Live Editing**: You can manually edit the live transcript as you record—add names, fix acronyms, or remove tangents.
-
-### Note Generation
-
-Once you hit **End Session (⌘⇧E)**, click **Generate Notes**.
-
-- Echos sends the finalized transcript to Google's API along with a strict formatting persona. 
-- The resulting Markdown streams in real-time into the **Notes Panel**.
-- Not happy with the focus? Click **Regenerate...** and provide custom guidance (e.g., *"Focus on the mathematical formulas"* or *"Write in a concise bullet-point style"*).
+- **⌘G** — Opens the stacked **Brain View** graph page; **`load_graph`** is fed JSON from **`ConnectionResolver.resolve(VaultIndex)`** after **`IndexWorker`** finishes.
+- **⇧⌘P** — Command palette for quick vault navigation and a few bundled actions.
 
 ### Saving to Obsidian
 
-Click **Save to Obsidian (⌘S)**. The app injects YAML front matter and writes the file safely. You can then click **Open in Obsidian** to instantly jump to your new note.
+**⌘S** (**Save Note**) merges **Markdown · inject_frontmatter(...)**: `course`, `lecture`, `date`, `tags`, `echos_version`, optional **`fingerprint`** string from generation when available.
 
 ---
 
-## ⚙️ Configuration & Settings
+## Settings
 
-Access Settings via **Echos → Settings (⌘,)**.
+Open **Echos → Settings… (⌘,)**.
 
-- **Transcription Settings**: Adjust chunk size (3–10s) and overlap duration (0–1s) to balance transcription latency vs. accuracy. Switch inference mode between `Auto`, `MPS` (Metal), and `CPU`.
-- **Note Settings**: Tweak LLM temperature (default `0.2` for highly structured notes), max tokens, and output language. 
-- **Custom Prompts**: Append persistent custom instructions to the AI (e.g., *"always include a glossary at the bottom"*).
-- **YAML Templates**: Customize the Front Matter tags injected into Obsidian using dynamic placeholders like `{course_lower}`.
-
----
-
-## 🛠️ Architecture & Under the Hood
-
-### Audio Pipeline
-
-Audio is captured via a `sounddevice` PortAudio stream (16 kHz, mono, float32) running on a background `QThread`. Audio is accumulated in a rolling numpy buffer and periodically passed to PyTorch for `float16` feature extraction and inference.
-
-### State & Thread Management
-
-Echos maintains a responsive GUI utilizing multiple background threads:
-
-- **AudioWorker (`QThread`)**: Manages the mic stream and transcription queue.
-- **NotesWorker (`QThread`)**: Handles the streaming Gemini API network call.
-- **VaultWatcher**: A `QFileSystemWatcher` wrapper that triggers main-thread Qt slots on file changes.
-
-### Config Safety
-
-Configuration (`~/Library/Application Support/Echos/config.json`) is written atomically using a write-then-rename swap mechanism, preventing data corruption during unexpected shutdowns.
+| Area | Highlights |
+| ---- | ----------- |
+| **Audio / ASR** | Chunk length (3–10 s), overlap (0–1 s), **Auto / MPS / CPU** device. |
+| **Notes LLM** | Model id (default aligns with **`gemma-4-31b-it`** in config defaults), temperature, max tokens, output language. |
+| **YAML** | Toggle front matter include; customise tag template (`{course_lower}` placeholder). |
 
 ---
 
-## 💻 Developer Setup
+## Architecture (developer mental model)
 
-Want to contribute or build from source? 
+| Layer | Role |
+| ----- | ----- |
+| **`main.py`** | Dylib patching for **`sounddevice` / `soundfile`** in bundles, **`Fusion`** styling, palette, onboarding gate, **`AppController`**. |
+| **`AppController`** | State machine (**IDLE**, **RECORDING**, **GENERATING**, etc.), wires **`AudioWorker`**, **`NotesWorker`**, **`ModelDownloadWorker`**, indexing, updates, shortcuts. |
+| **`ModelManager`** | Whisper HF id **`openai/whisper-large-v3`**, device selection, progressive download + load. |
+| **`AudioWorker`** | **`sounddevice`** stream on **`QThread`**, numpy buffers → transcription queue. |
+| **`NotesWorker`** | Streaming **`google-genai`** completions; `_strip_thinking` cleanup. |
+| **`VaultWatcher`** | **`QFileSystemWatcher`** + **30 s** debounce **`reindex_ready`** when connected to **`VaultIndex`**. |
+| **`VaultIndex`** | **`sqlite3`** at **`<vault>/.echoes/vault.index.db`**. |
+| **`IndexWorker`** | Per dirty note: **`EmbeddingEngine.embed`**, **`FingerprintEngine.generate`**, `[[wikilink]]` extraction into the edges table, clears **`dirty`**. |
+| **`ConnectionResolver`** | Turns the latest **`VaultIndex`** snapshot into graph payload: **wikilink edges first**, then **concept-overlap** strengths from fingerprints, then **cosine ≥ 0.8** vector pairs. |
+| **`GraphCanvasWidget`** | **`QWebEngineView`** + **`QWebChannel`** bridge **`echosGraphBridge`** → **`echos/assets/graph.html`**. |
+
+---
+
+## Developer setup
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/Akoirala47/Echos.git
 cd Echos
 
-# 2. Install libsndfile (Required for PortAudio on macOS)
-brew install libsndfile
+brew install libsndfile   # dev machines without wheel-bundled audio libs may need this
 
-# 3. Create a Python 3.11 virtual environment
 python3.11 -m venv .venv
 source .venv/bin/activate
-
-# 4. Install dependencies
 pip install -r requirements.txt -r requirements-dev.txt
 
-# 5. Run the application
 python -m echos.main
 ```
 
-### Running Tests
-
-Echos is tested via `pytest` focusing on configurations, core logic, and utilities (no GUI event loops required).
+### Tests
 
 ```bash
 pytest tests/ -v
 ```
 
-### Packaging the macOS DMG
+pytest covers **`vault_index`**, **`fingerprint`**, **`index_worker`**, **`connection_resolver`**, **`vault_watcher`**, **`graph_canvas`**, **`config_manager`**, Markdown helpers, **`tab_manager`**, **`obsidian_manager`**, **`model_manager`**, **`audio_utils`**, **`frontmatter`**, and related pieces (no requirement to run headless GUI workflows for every scenario).
 
-Echos bundles all Python runtimes and frameworks (including a natively patched PortAudio) via `py2app` and `create-dmg`. 
+### Packaging a macOS DMG
+
+Uses **`py2app`** helpers under **`build/`**.
 
 ```bash
 brew install create-dmg
@@ -158,10 +146,13 @@ chmod +x build/build.sh
 
 ---
 
-## 📄 License
+## Related docs
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+- **`SPEC.md`** — Product/spec alignment (historical branding *Scout* in the title; codebase name is **Echos**).
+- **`graph-fingerprinting-outline.md`** — Design notes for WebGPU-style graph sizing and fingerprint pipeline details.
 
 ---
 
-*Optimized for privacy, built for learning. Take back your focus with Echos.*
+## License
+
+MIT — see **`LICENSE`**.
