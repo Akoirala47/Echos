@@ -232,15 +232,25 @@ function _initPixi() {
     _applyTransform();
   }, { passive: false });
 
-  // Pan
-  _app.view.addEventListener('mousedown', e => {
-    if (e.button !== 0) return;
+  // Suppress context menu only when right-clicking a node (canvas gets it normally)
+  _app.view.addEventListener('contextmenu', e => {
     const hit = _hitTest(e.clientX, e.clientY);
-    if (hit) {
-      _dragging = { node: hit, ox: e.clientX, oy: e.clientY };
-      if (_sim) { hit.fx = hit.x; hit.fy = hit.y; _sim.alphaTarget(0.3).restart(); }
-    } else {
-      _panStart = { mx: e.clientX, my: e.clientY, tx: _transform.x, ty: _transform.y };
+    if (hit) e.preventDefault();
+  });
+
+  // Right-click → drag node; left-click → pan canvas
+  _app.view.addEventListener('mousedown', e => {
+    if (e.button === 2) {
+      const hit = _hitTest(e.clientX, e.clientY);
+      if (hit) {
+        _dragging = { node: hit };
+        if (_sim) { hit.fx = hit.x; hit.fy = hit.y; _sim.alphaTarget(0.3).restart(); }
+      }
+    } else if (e.button === 0) {
+      const hit = _hitTest(e.clientX, e.clientY);
+      if (!hit) {
+        _panStart = { mx: e.clientX, my: e.clientY, tx: _transform.x, ty: _transform.y };
+      }
     }
   });
   window.addEventListener('mousemove', e => {
@@ -259,12 +269,12 @@ function _initPixi() {
     }
   });
   window.addEventListener('mouseup', e => {
-    if (_dragging) {
+    if (e.button === 2 && _dragging) {
       _dragging.node.fx = null; _dragging.node.fy = null;
       if (_sim) _sim.alphaTarget(0);
       _dragging = null;
     }
-    _panStart = null;
+    if (e.button === 0) _panStart = null;
   });
 
   // Click
