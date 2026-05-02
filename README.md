@@ -14,11 +14,11 @@ Privacy boundary: **raw audio stays on your Mac.** Only text is sent to Google w
 - **Obsidian-aware workflow** — Course-based folders, YAML front matter, “Open in Obsidian,” vault URI support. Sidebar tree stays in sync with disk via **`QFileSystemWatcher`** (hidden folders such as `.obsidian` are ignored).
 - **Incremental note drafting** — While recording, once enough **new transcript** has accumulated (~3 500 characters per chunk), Echos can **stream drafted notes** in the Notes panel so you are not stuck with a blank page until the session ends (requires a configured API key).
 - **Manual generate & regenerate** — After **End Session**, use **Generate Notes** and **Regenerate…** with custom instructions; thinking/reasoning tags from the model are stripped before display.
-- **Brain View (knowledge graph)** — **`View → Brain View` (⌘G)** switches to an embedded **PyQt WebEngine** page that renders the vault graph with **PIXI.js**. Edges combine **wikilinks**, **shared fingerprint concepts**, and **high cosine similarity** between locally stored embeddings. **`View → Command Palette` (⇧⌘P)** jumps to vault files or common actions.
+- **Brain View (knowledge graph)** — **`View → Brain View` (⌘G)** opens **`echos/assets/graph.html`**: **PIXI.js** draws nodes on **WebGL**, **`d3-force`** runs the physics, and **`qwebchannel.js`** with **`QtWebChannel`** pushes graph JSON from Python and receives clicks. Layered edges reflect **wikilinks**, overlapping **fingerprint concepts**, and high **embedding cosine** similarity. **`View → Command Palette` (⇧⌘P)** jumps to vault files or common actions.
 - **Vault index (`SQLite`)** — Under your vault root, **`.echoes/vault.index.db`** stores indexed notes (`vector_blob`, `fingerprint_text`, `dirty`), **edges**, and **tags**. The watcher marks changed `.md` files dirty immediately; indexing runs **after a 30 s quiet debounce** of saves so bursts of edits collapse into one batch.
 - **Fingerprints & embeddings** — **FingerprintEngine** calls the configured **Google AI** (`google-genai`) model for structured concepts/domains (`concepts:[…] | domain:[…] | hash:…`, kept short for YAML). When the vault grows past ~30 fingerprinted notes, **`top_k_similar`** narrows vocabulary candidates (~20 neighbours) via **`all-MiniLM-L6-v2`** embeddings. **`sentence-transformers`** persists **384‑dim** vectors in SQLite for cosine-based graph edges (see **`ConnectionResolver`**).
 - **Sessions** — Pause / resume recording, overlapping chunk dedupe in the transcription path, Dock recording indicator optional, option to prevent sleep during capture.
-- **Editor tabs** — The main area uses a **split-friendly tab workspace**: the Echoes recording view plus Markdown editor tabs (with **`QWebChannel`** where used for previews). Choosing a graph node opens that note’s path in an editor tab and returns you to the recording layout.
+- **Editor tabs** — **`SplitTabArea`** layers the Echoes workspace with Markdown editor tabs; clicking a Brain View node opens that vault path via **`TabManager.open_file`** and returns you to the recorder layout (**`AppController`**).
 - **In-app updates** — On launch, Echos may check **`Akoirala47/Echos`** GitHub releases and offer to download the latest `.dmg`.
 
 ---
@@ -28,11 +28,11 @@ Privacy boundary: **raw audio stays on your Mac.** Only text is sent to Google w
 | Requirement  | Details |
 | ------------- | ------- |
 | **macOS**    | **13 Ventura** or later. |
-| **Hardware** | **Apple Silicon** strongly recommended for responsive Whisper inference. Intel Macs use CPU (slower but supported). Extra RAM helps when Whisper, embeddings, and the WebEngine graph are all active. |
+| **Hardware** | **Apple Silicon** strongly recommended for responsive Whisper inference. Intel Macs use CPU (slower but supported). Extra RAM helps when Whisper, embeddings, and Brain View (WebGL) are active together. |
 | **Obsidian** | [Obsidian](https://obsidian.md) recommended; Echos writes into folders you designate inside a vault structure. |
 | **API key**  | **Google AI API key** ([aistudio.google.com/apikey](https://aistudio.google.com/apikey)) for note generation & fingerprint passes during indexing. |
 | **Storage**    | Roughly **4 GB** free for the app plus Whisper (~3 GB downloaded on first use). The embedding model pulls in separately the first time `sentence-transformers` runs. |
-| **Graph view** | **PyQt6-WebEngine** (listed in `requirements.txt`). If WebEngine fails to load, Brain View falls back to a short message instead of the canvas. |
+| **Brain View host** | Visualization is **`echos/assets/graph.html`** (**vendor PIXI + d3**, WebGL sprites + force simulation). **`GraphCanvasWidget`** (`echos/ui/graph_canvas.py`) hosts that page inside Qt **`QWebEngineView`** (Chromium) and drives **`qtwebchannel`** ↔ **`QtWebChannel`** so Python can **`runJavaScript`** updates and receive node clicks. Without WebEngine/Chromium payloads available to the process, **`GraphCanvasWidget`** falls back to its placeholder label. |
 
 ---
 
@@ -107,7 +107,7 @@ Open **Echos → Settings… (⌘,)**.
 | **`VaultIndex`** | **`sqlite3`** at **`<vault>/.echoes/vault.index.db`**. |
 | **`IndexWorker`** | Per dirty note: **`EmbeddingEngine.embed`**, **`FingerprintEngine.generate`**, `[[wikilink]]` extraction into the edges table, clears **`dirty`**. |
 | **`ConnectionResolver`** | Turns the latest **`VaultIndex`** snapshot into graph payload: **wikilink edges first**, then **concept-overlap** strengths from fingerprints, then **cosine ≥ 0.8** vector pairs. |
-| **`GraphCanvasWidget`** | **`QWebEngineView`** + **`QWebChannel`** bridge **`echosGraphBridge`** → **`echos/assets/graph.html`**. |
+| **`GraphCanvasWidget`** | Best-effort **`QtWebEngineWidgets`**: **`echosGraphBridge`** (**`QObject`**) registered on **`QtWebChannel`**, **`graph.html`** (PIXI + d3-force), **`runJavaScript`** invokes **`window.echosGraph.loadGraph`** with **`ConnectionResolver`** JSON. Fallback **`QLabel`** when WebEngine import fails. |
 
 ---
 
@@ -122,6 +122,8 @@ brew install libsndfile   # dev machines without wheel-bundled audio libs may ne
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
+
+# Brain View shells graph.html in Qt WebEngine (Chromium). requirements.txt pulls PyQt6-WebEngine (+ PyQt6).
 
 python -m echos.main
 ```
