@@ -119,15 +119,68 @@ echo "Contents/Frameworks dylibs:"
 ls -lh "$FRAMEWORKS_DIR"/*.dylib 2>/dev/null || echo "  (none found)"
 
 # ---------------------------------------------------------------------------
-# Step 3c — Re-apply ad-hoc signature after bundle modifications
-# Step 3b copies dylibs into Contents/Frameworks/ after py2app has already
-# signed the bundle, which invalidates the signature.  An invalid (broken)
-# signature causes macOS 15+ to show "app is damaged" with no "Open Anyway"
-# option.  Re-signing with an ad-hoc identity (-s -) fixes the bundle
-# structure without requiring a paid Developer ID certificate.
+# Step 3c — Unzip python311.zip onto the real filesystem
+# py2app's no_zip:True is not reliably honoured across all versions.  When it
+# is ignored, soundfile.py and _soundfile_data end up inside python311.zip.
+# dlopen() cannot open paths inside a zip archive (errno=20, ENOTDIR), so
+# soundfile's bundled libsndfile_arm64.dylib becomes unreachable at runtime.
+#
+# Fix: extract the zip contents to lib/python3.11/ (where they should have
+# been placed by no_zip in the first place), then replace the zip with an
+# empty archive.  Python's zipimport skips empty archives harmlessly, and
+# the real-filesystem copies are found via sys.path in the normal way.
+# ---------------------------------------------------------------------------
+PYZIP="${APP_PATH}/Contents/Resources/lib/python311.zip"
+PYLIB="${APP_PATH}/Contents/Resources/lib/python3.11"
+
+echo ""
+echo "=== [3c] Ensuring Python packages are on real filesystem (no_zip workaround) ==="
+
+if [[ -f "$PYZIP" ]]; then
+    python3 - "$PYZIP" "$PYLIB" <<'PYEOF'
+import zipfile, os, sys
+
+zip_path, dest = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(zip_path, 'r') as z:
+    names = z.namelist()
+
+if not names:
+    print("  python311.zip is already empty — nothing to do")
+    sys.exit(0)
+
+print(f"  Found {len(names)} entries in python311.zip — extracting to lib/python3.11/")
+os.makedirs(dest, exist_ok=True)
+with zipfile.ZipFile(zip_path, 'r') as z:
+    z.extractall(dest)
+print(f"  Extracted {len(names)} entries")
+PYEOF
+
+    # Replace with empty zip so py2app's boot sys.path entry remains valid
+    python3 -c "
+import zipfile, sys
+with zipfile.ZipFile(sys.argv[1], 'w') as z:
+    pass
+print('  Replaced python311.zip with empty archive')
+" "$PYZIP"
+else
+    echo "  python311.zip not present — no action needed"
+fi
+
+echo ""
+echo "Contents/Resources/lib/python3.11 soundfile check:"
+ls "${PYLIB}/_soundfile_data/"*.dylib 2>/dev/null \
+    && echo "  libsndfile dylib is on real filesystem" \
+    || echo "  WARNING: _soundfile_data dylib not found in lib/python3.11"
+
+# ---------------------------------------------------------------------------
+# Step 3e — Re-apply ad-hoc signature after bundle modifications
+# Steps 3b/3c modify the bundle after py2app signs it, which invalidates the
+# signature.  An invalid (broken) signature causes macOS 15+ to show "app is
+# damaged" with no "Open Anyway" option.  Re-signing with an ad-hoc identity
+# (-s -) fixes the bundle without requiring a paid Developer ID certificate.
 # ---------------------------------------------------------------------------
 echo ""
-echo "=== [3c] Re-signing bundle with ad-hoc identity ==="
+echo "=== [3e] Re-signing bundle with ad-hoc identity ==="
 codesign --deep --force --sign - "$APP_PATH"
 echo "Ad-hoc signature applied."
 

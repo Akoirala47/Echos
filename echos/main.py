@@ -29,8 +29,10 @@ def _find_dylib(stem: str) -> Path | None:
     for ancestor in this_file.parents:
         fw = ancestor / "Frameworks"
         if fw.is_dir():
-            candidates += sorted(fw.glob(f"{stem}*.dylib"))
-            break
+            found = sorted(fw.glob(f"{stem}*.dylib"))
+            if found:
+                candidates += found
+                break
 
     # 2. Wheel data directories bundled alongside the package.
     #    soundfile ships libsndfile_arm64.dylib inside _soundfile_data/
