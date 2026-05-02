@@ -128,13 +128,15 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #f0ede4; }
 'use strict';
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
-const BG          = 0xf0ede4;   // CANVAS_BG — warm parchment
-const ACCENT      = 0xc2410c;
-const BORDER      = 0xdcdacf;
-const NODE_DIM    = 0xd0cdc4;   // dimmed node colour on light bg
-const EDGE_ALPHA  = 0.55;
-const EDGE_STRONG = 0xc2410c;
-const EDGE_WEAK   = 0xdcdacf;   // BORDER — subtle on parchment
+const BG           = 0xf0ede4;   // CANVAS_BG — warm parchment
+const ACCENT       = 0xc2410c;
+const BORDER       = 0xdcdacf;
+const NODE_DIM     = 0xd0cdc4;   // dimmed node colour on light bg
+const NODE_OUTLINE = 0x3a3835;   // soft dark outline for nodes
+const LABEL_COLOR  = 0x3a3835;   // matches outline — readable on parchment
+const EDGE_ALPHA   = 0.55;
+const EDGE_STRONG  = 0xc2410c;
+const EDGE_WEAK    = 0xdcdacf;   // BORDER — subtle on parchment
 
 const DOMAIN_PALETTE = [
   0xc2410c, 0x1c8b4a, 0x1d4ed8, 0xbe185d, 0xb45309, 0x7c3aed,
@@ -372,6 +374,7 @@ function _buildPixiNodes() {
     const color = n.color ? hexToPixi(n.color) : DOMAIN_PALETTE[0];
 
     const gfx = new PIXI.Graphics();
+    gfx.lineStyle(1.2, NODE_OUTLINE, 0.38);
     gfx.beginFill(color, 1);
     gfx.drawCircle(0, 0, NODE_R);
     gfx.endFill();
@@ -381,7 +384,7 @@ function _buildPixiNodes() {
       {
         fontFamily: '-apple-system, BlinkMacSystemFont, Inter, sans-serif',
         fontSize: 10,
-        fill: 0xa09e93,
+        fill: LABEL_COLOR,
         resolution: 2,
       }
     );

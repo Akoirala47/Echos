@@ -57,10 +57,10 @@ def selected_bg()    -> str: return SELECTED_STRONG
 
 # ── Graph canvas (Brain View) ─────────────────────────────────────────────────
 CANVAS_BG          = "#f0ede4"   # warm parchment canvas (matches SIDEBAR_BG family)
-CANVAS_NODE_DEFAULT = "#b0ae9e"  # muted warm node fill on light bg
+CANVAS_NODE_DEFAULT = "#A38300"  # muted warm node fill on light bg
 CANVAS_EDGE_STRONG = ACCENT      # strong/wikilink edges
 CANVAS_EDGE_WEAK   = BORDER      # weak/vector similarity edges
-CANVAS_LABEL       = TEXT_FAINT  # node label text
+CANVAS_LABEL       = "TEXT_FAINT"  # node label text
 
 # Warm + muted 6-colour domain palette (used for concept clusters)
 DOMAIN_PALETTE = [
